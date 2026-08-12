@@ -23,11 +23,15 @@ obur-backend/
 │   │   ├── redis.py           # redis client
 │   │   └── security.py        # clerk JWT verification
 │   ├── models/
-│   │   └── __init__.py        # SQLAlchemy ORM models
+│   │   ├── __init__.py        # re-exports Base + all model classes
+│   │   ├── base.py            # shared SQLAlchemy declarative base
+│   │   └── user.py            # one module per resource (added as built)
 │   ├── schemas/
-│   │   └── __init__.py        # Pydantic request/response schemas
+│   │   └── __init__.py        # Pydantic request/response schemas, one module per resource
 │   ├── services/
-│   │   └── __init__.py        # business logic, DB queries
+│   │   └── __init__.py        # business logic, DB queries, one module per resource
+│   ├── exceptions/
+│   │   └── __init__.py        # custom exceptions, one module per service domain
 │   ├── middleware/
 │   │   └── __init__.py        # rate limiting, logging, auth
 │   └── main.py                # FastAPI app, lifespan, middleware registration
@@ -41,6 +45,8 @@ obur-backend/
 ├── docs/
 │   ├── local-setup.md
 │   ├── deployment.md
+│   ├── testing-strategy.md
+│   ├── roadmap.md
 │   └── project-structure.md
 ├── .env.example
 ├── .gitignore

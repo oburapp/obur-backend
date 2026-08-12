@@ -63,9 +63,9 @@ directory layout.
 
 ## Code Style
 
-- Follow PEP 8 and black formatter rules
-- Max line length: 88 characters (black default)
-- Import order: stdlib → third-party → local (isort)
+- Follow PEP 8, formatted with `ruff format`
+- Max line length: 88 characters
+- Import order: stdlib → third-party → local (enforced via ruff's `I` rules)
 - Use f-strings, never `.format()` or `%`
 - Prefer list comprehensions but never sacrifice readability
 - Max function length: 30 lines — if scrolling is needed, split it
@@ -78,12 +78,11 @@ async def get_venue_checkins(
     venue_id: UUID,
     limit: int = 20,
     offset: int = 0,
-) -> list[CheckinResponse]:
-    ...
+) -> list[CheckinResponse]: ...
+
 
 # wrong
-async def get_venue_checkins(venue_id, limit=20, offset=0):
-    ...
+async def get_venue_checkins(venue_id, limit=20, offset=0): ...
 ```
 
 ---
@@ -100,12 +99,11 @@ async def create_checkin(
     user_id: UUID,
     payload: CheckinCreateRequest,
     session: AsyncSession,
-) -> CheckinResponse:
-    ...
+) -> CheckinResponse: ...
+
 
 # wrong
-async def create_checkin(user_id, payload, session):
-    ...
+async def create_checkin(user_id, payload, session): ...
 ```
 
 ---
@@ -195,18 +193,19 @@ except:
 # wrong
 search_service = SearchService()  # global
 
+
 # correct
 async def get_search_service(
     session: AsyncSession = Depends(get_session),
 ) -> SearchService:
     return SearchService(session)
 
+
 @router.get("/venues/{venue_id}/checkins")
 async def list_checkins(
     venue_id: UUID,
     service: CheckinService = Depends(get_checkin_service),
-) -> list[CheckinResponse]:
-    ...
+) -> list[CheckinResponse]: ...
 ```
 
 ---
@@ -259,26 +258,59 @@ cache_key = f"embed:{hash(text)}"  # non-deterministic across restarts
 
 ---
 
+## Configuration
+
+See [obur-docs/CLAUDE.md](https://github.com/oburapp/obur-docs/blob/main/CLAUDE.md#environment-variables)
+for the general production-vs-local-only rule. Concretely, in this repo:
+
+- `Settings` fields (`app/core/config.py`) with no default are the
+  production-reaching contract — `database_url`, `redis_url`,
+  `cors_origins`, `environment`. Missing → `Settings()` raises immediately,
+  it never falls back to a plausible-looking localhost value.
+- Fields not yet consumed by any code path (`clerk_secret_key`, `r2_*`)
+  default to `""` — an honest "not configured" sentinel, not a fake value.
+  Make a field required in the same PR that starts actually using it, not
+  before — a required field for an integration nobody has built yet just
+  blocks the app from starting.
+- Local dev infrastructure (`docker-compose.yml` ports, `POSTGRES_*`) reads
+  from `.env` via `${VAR:-default}` — never a second hardcoded copy of a
+  value `.env` already owns.
+- Test-only config (`tests/conftest.py`) derives its test database/Redis
+  URLs from the real `.env` (via `python-dotenv`) instead of hardcoding an
+  independent value, so a local port override (e.g. to dodge a collision
+  with an already-running Postgres) is honored automatically rather than
+  silently pointing tests at the wrong place.
+
+```python
+# correct — fails fast, no plausible-looking fallback
+database_url: str
+
+# wrong — masks a missing/misconfigured .env
+database_url: str = "postgresql+asyncpg://user:password@localhost:5432/obur"
+```
+
+---
+
 ## Testing
+
+See [docs/testing-strategy.md](docs/testing-strategy.md) for the unit vs.
+integration split and the test database setup.
 
 - Test coverage minimum: **98%**
 - Every service function must have unit tests
-- Integration tests cover critical flows end-to-end (checkin creation, venue search, auth)
-- Never call real external services in tests — always mock (R2, Redis, Clerk, PostGIS)
 - Use fixtures for all shared state — tests must be fully independent
 - Test names must describe exactly what they verify:
 
 ```python
 # correct
-async def test_create_checkin_returns_201_with_valid_payload():
-    ...
+async def test_create_checkin_returns_201_with_valid_payload(): ...
 
-async def test_create_checkin_fails_with_missing_venue_id():
-    ...
+
+async def test_create_checkin_fails_with_missing_venue_id(): ...
+
 
 # wrong
-async def test_checkin():
-    ...
+async def test_checkin(): ...
 ```
 
 ---
