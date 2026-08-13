@@ -27,8 +27,14 @@ class Settings(BaseSettings):
     cors_origins: str
     database_url: str
     redis_url: str
+    # Genuinely consumed now (app/core/security.py) — required as of Phase 1.
+    clerk_secret_key: str
 
-    clerk_secret_key: str = ""
+    # Not required yet: the webhook endpoint (app/api/v1/webhooks.py) is
+    # built and unit-tested, but real Clerk webhook delivery needs a public
+    # URL to register in the Clerk Dashboard, which doesn't exist until
+    # closer to deployment. Make this required once that's configured.
+    clerk_webhook_secret: str = ""
 
     r2_account_id: str = ""
     r2_access_key_id: str = ""
