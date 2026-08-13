@@ -31,6 +31,12 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DATABASE_URL", _test_database_url)
 os.environ.setdefault("REDIS_URL", _test_redis_url)
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+# Never the real secrets from .env — Clerk verification is always mocked
+# in tests (see docs/testing-strategy.md). CLERK_WEBHOOK_SECRET must still
+# be validly formatted: svix.Webhook() validates the "whsec_..." shape at
+# construction time, before any mock of its .verify() method takes effect.
+os.environ.setdefault("CLERK_SECRET_KEY", "sk_test_fake_for_tests")
+os.environ.setdefault("CLERK_WEBHOOK_SECRET", "whsec_ZmFrZV93ZWJob29rX3NlY3JldA==")
 
 from collections.abc import AsyncGenerator  # noqa: E402
 

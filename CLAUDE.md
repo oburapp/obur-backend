@@ -18,6 +18,11 @@ Only open individual ADR files when the relevant topic comes up — not all at o
 
 For build order and current phase, see [docs/roadmap.md](docs/roadmap.md).
 
+Common commands are wrapped in the `justfile` — run `just --list` to see
+them (lint, format, typecheck, test, `check` for all three, `up`/`down`
+for local infra, `migrate`/`migration`). See [obur-docs/CLAUDE.md](https://github.com/oburapp/obur-docs/blob/main/CLAUDE.md#task-runner)
+for the cross-repo convention.
+
 ---
 
 ## Tech Stack

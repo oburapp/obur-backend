@@ -5,10 +5,12 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.19.1",
     "asyncpg>=0.31.0",
+    "clerk-backend-api>=7.0.0",
     "fastapi>=0.141.1",
     "pydantic-settings>=2.15.0",
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.0.52",
+    "svix>=1.99.1",
     "uvicorn[standard]>=0.52.1",
 ]
 
@@ -33,6 +35,12 @@ select = ["E", "F", "W", "I", "UP", "B", "C901"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is designed around calls-in-defaults
+# (`param: T = Depends(...)`) — not the mutable-default-argument bug B008
+# otherwise correctly guards against.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
 
 [tool.pyright]
 include = ["app", "tests", "migrations"]
