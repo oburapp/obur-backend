@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-13
+
+### Added
+
+- `VENUE`, `PRODUCT`, `VENUE_CATEGORY`, `GLOBAL_PRODUCT_TYPE`, and
+  `VENUE_SAVE` models, with hierarchical categories and a
+  translation-table pattern for multi-language display names
+- Seed data for the initial venue category and product type catalog
+  (Turkish), with one file per locale so adding a new language needs no
+  code changes elsewhere
+- Duplicate-venue detection: a new venue within 50 meters of an existing
+  one is flagged before insert, so the client can prompt "did you mean
+  this one?" instead of creating a near-duplicate
+- Venue name search using PostgreSQL trigram similarity, tolerant of
+  typos, partial input, and names typed without Turkish diacritics —
+  chosen over language-specific full-text search to work uniformly
+  across languages as the platform expands beyond Turkish
+- `POST/GET /api/v1/venues`, `GET /api/v1/venues/{id}`
+- `POST/GET /api/v1/products`, `GET /api/v1/products/{id}`
+
 ## [0.2.0] - 2026-08-13
 
 ### Added
