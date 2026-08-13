@@ -258,8 +258,8 @@ cache_key = f"embed:{hash(text)}"  # non-deterministic across restarts
 
 - All coordinates stored as `FLOAT` (lat, lng) — PostGIS used for proximity queries
 - Duplicate venue detection: query for existing venues within 50m radius before insert
-- Full-text search uses PostgreSQL FTS with Turkish language configuration
-- When PostgreSQL FTS becomes a bottleneck, migrate to Meilisearch — document the decision as an ADR
+- Venue name search uses `pg_trgm` word-similarity matching on `name` (diacritics folded via `unaccent`), not PostgreSQL FTS — language-agnostic and typo-tolerant by construction, which a language-specific FTS config isn't; see ADR-0003 in obur-docs
+- When `pg_trgm` becomes a bottleneck, migrate to Meilisearch — document the decision as an ADR
 
 ---
 
