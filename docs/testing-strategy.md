@@ -49,6 +49,40 @@ same schema version as the real migration history — nobody has to
 remember to migrate it by hand, and it can never silently drift from what
 `obur` (or production) actually has.
 
+## N+1 query prevention
+
+Every endpoint or service function that returns a list of ORM objects
+*and* resolves related data through a SQLAlchemy `relationship()` (not
+just a raw FK id) must have an integration test asserting the number of
+SQL statements executed stays constant as the list grows — not only the
+first such endpoint built, every one. A working `joinedload`/`selectinload`
+call today doesn't guarantee the next person touching that code path
+keeps it that way; a query-count assertion catches a regression to lazy
+loading the same way a snapshot test catches an unintended output change.
+
+Mechanism: a `db_session`-scoped fixture that counts statements via
+SQLAlchemy's `before_cursor_execute` event, so a test can do something
+like:
+
+```python
+async def test_list_venues_with_products_does_not_n_plus_1(
+    db_session, query_counter
+) -> None:
+    # ... create N venues, each with products ...
+    with query_counter() as count:
+        await venue_service.list_venues_with_products(db_session, limit=20, offset=0)
+    assert count() <= _EXPECTED_QUERY_COUNT  # constant, not O(N)
+```
+
+As of Phase 2 (Venues & Products), no model declares a `relationship()`
+yet — every response schema serializes only scalar columns of the object
+itself, so there's currently no code path where N+1 is possible, and no
+`query_counter` fixture exists yet either. The first phase that adds a
+`relationship()` and eager-loads it must also add this fixture (in
+`tests/integration/conftest.py`) and the first test using it — from then
+on, it applies to every relational list endpoint added after, not just
+that first one.
+
 ## Coverage
 
 Minimum 98%, enforced via `pytest-cov` (see `[tool.coverage]` in
