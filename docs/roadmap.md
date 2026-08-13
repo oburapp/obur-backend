@@ -6,6 +6,11 @@ by dependency: each one unblocks the next, so building out of order creates
 rework. See [pdd/obur-pdd.md](https://github.com/oburapp/obur-docs/blob/main/pdd/obur-pdd.md)
 for the product rationale behind each domain.
 
+This roadmap covers `obur-backend` only. A real end-to-end login — a user
+actually completing a Clerk sign-in flow — also needs `obur-web` and/or
+`obur-mobile` to integrate the Clerk client SDK. That's tracked in those
+repos, not gated by this phase order.
+
 ## Phase 0 — Bootstrap
 
 - `uv init`, `pyproject.toml`, core dependencies (fastapi, uvicorn, sqlalchemy[asyncio], alembic, asyncpg, pydantic-settings, redis, boto3)
@@ -19,12 +24,39 @@ for the product rationale behind each domain.
 
 ## Phase 1 — Identity & Auth
 
-- `USER` model + first real migration
-- Clerk JWT verification middleware (`app/core/security.py`)
+- `USER` model (with `auth_provider` / `auth_provider_id`, not a
+  Clerk-specific field name — see rationale below) + first real migration
+- Clerk JWT verification middleware (`app/core/security.py`), isolated so
+  no other module imports Clerk directly — everywhere else sees our own
+  `User`, not a Clerk type
 - Auth dependency for protected routes; public routes explicitly marked
+- Clerk webhook endpoint (`user.created` / `user.updated` / `user.deleted`)
+  with signature verification, as the primary sync mechanism — a profile
+  change made via Clerk's own UI (e.g. email) must reach every client, not
+  just the one that made it
+- JIT provisioning in the auth dependency as a fallback only, for the race
+  where a first request arrives before the webhook does
 - `GET /api/v1/users/me`
 
+**Why webhook + JIT, not JIT alone:** JIT alone only fires on first-seen
+login — it never revisits a user afterward, so a Clerk-side change (e.g.
+email updated through Clerk's own account UI) would never reach our
+`USER` row. Auth and cross-device consistency are foundational enough
+that this needed the correct mechanism, not the cheaper one — this phase
+grew beyond its original one-line sketch for that reason.
+
 **Why now:** every other domain has a `user_id` FK and needs a verified identity to attach writes to.
+
+**Deferred from this phase, on purpose:**
+- The Clerk webhook is built and unit-tested but not yet registered with
+  Clerk — that needs a public URL, which doesn't exist until deployment.
+  Until then it fails closed (clean 401), not silently. Picked back up in
+  Phase 8.
+- `authorized_parties` (the `azp` claim check) is left unset in
+  `app/core/security.py`. Safe for now: there's a single Clerk application
+  and no second app to confuse a token with, so the check has nothing to
+  guard against yet. Set it once real `obur-web`/`obur-mobile` origins
+  exist — Phase 8.
 
 ## Phase 2 — Venues & Products
 
@@ -40,6 +72,10 @@ for the product rationale behind each domain.
 - `CHECKIN`, `CHECKIN_PRODUCT` models
 - Create-checkin service: one `CHECKIN` + N `CHECKIN_PRODUCT` rows in a single transaction
 - `POST /api/v1/checkins`, `GET /api/v1/venues/{id}/checkins`, `GET /api/v1/users/{id}/checkins`
+- Ownership authorization: a user may only edit/delete their own
+  check-ins. This is the first place "is this `current_user` allowed to do
+  this" matters — built here, alongside the endpoints that need it, not as
+  a separate upfront auth phase.
 
 **Why now:** this is the product's core action (PDD §10) and the dependency root for aggregate scoring, badges, and feed — build and stabilize it before anything downstream consumes it.
 
@@ -81,6 +117,15 @@ for the product rationale behind each domain.
 - Unit tests to the 98% coverage bar per service
 - Integration tests: auth, check-in creation, venue search
 - `docs/deployment.md` written against the real Railway setup
+- Register the real Clerk webhook against the deployed URL; move
+  `CLERK_WEBHOOK_SECRET` from empty to required (see Phase 1)
+- Set `authorized_parties` in `app/core/security.py` to the real deployed
+  `obur-web` / `obur-mobile` origins (see Phase 1)
 - First tagged release, `CHANGELOG.md` moves `[Unreleased]` → `[0.1.0]`
 
 **Why last:** deployment docs and coverage targets are only meaningful once there's a real, working surface to document and test.
+
+**Explicitly not in scope here:** load/performance testing. The PDD's MVP
+target is 200 MAU — at that scale, formal load testing is premature
+optimization; there's no real traffic pattern to test against yet. Revisit
+if that target changes.
