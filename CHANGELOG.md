@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-13
+
+### Added
+
+- `USER` model, with provider-agnostic `auth_provider` / `auth_provider_id`
+  identity fields, and its initial migration
+- Clerk session token verification (`app/core/security.py`)
+- `get_current_user` auth dependency, with JIT user provisioning as a
+  fallback
+- Clerk webhook endpoint (`user.created` / `.updated` / `.deleted`) with
+  Svix signature verification, keeping `User` rows in sync
+- `GET /api/v1/users/me`
+- `just` task runner for common dev commands (lint, format, typecheck,
+  test, local infra, migrations)
+
 ## [0.1.0] - 2026-08-13
 
 ### Added
