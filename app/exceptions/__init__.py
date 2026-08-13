@@ -5,5 +5,25 @@ from app.exceptions.auth_exceptions import (
     InvalidTokenError,
     InvalidWebhookSignatureError,
 )
+from app.exceptions.venue_exceptions import (
+    DuplicateVenueNearbyError,
+    GlobalProductTypeNotFoundError,
+    ProductError,
+    ProductNotFoundError,
+    VenueCategoryNotFoundError,
+    VenueError,
+    VenueNotFoundError,
+)
 
-__all__ = ["AuthError", "InvalidTokenError", "InvalidWebhookSignatureError"]
+__all__ = [
+    "AuthError",
+    "DuplicateVenueNearbyError",
+    "GlobalProductTypeNotFoundError",
+    "InvalidTokenError",
+    "InvalidWebhookSignatureError",
+    "ProductError",
+    "ProductNotFoundError",
+    "VenueCategoryNotFoundError",
+    "VenueError",
+    "VenueNotFoundError",
+]
