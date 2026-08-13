@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.v1 import users, webhooks
 from app.core.config import get_settings
 from app.core.database import check_database_connection, engine
 from app.core.redis import check_redis_connection, redis_client
@@ -17,6 +18,7 @@ settings = get_settings()
 
 # Responses smaller than this are not worth the CPU cost of compressing.
 _GZIP_MINIMUM_SIZE_BYTES = 1000
+_API_V1_PREFIX = "/api/v1"
 
 
 @asynccontextmanager
@@ -37,6 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(users.router, prefix=_API_V1_PREFIX)
+app.include_router(webhooks.router, prefix=_API_V1_PREFIX)
 
 
 @app.get("/health")
