@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from alembic import context
+from geoalchemy2.alembic_helpers import render_item, writer
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -15,6 +16,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # docker/postgres-init) — excluded here too as a safety net in case they
 # ever get re-added to a database.
 _EXCLUDED_POSTGIS_SCHEMAS = {"tiger", "tiger_data", "topology"}
+
+# Indexes created directly by hand-written migrations (not representable
+# in SQLAlchemy's ORM metadata — see the relevant model's docstring for
+# why) — without this, autogenerate would propose dropping them on every
+# run since it never sees them declared anywhere.
+_HAND_MAINTAINED_INDEXES = {"idx_venues_name_trgm"}
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -45,16 +52,23 @@ def include_object(
     reflected: bool,
     compare_to: Any | None,
 ) -> bool:
-    """Exclude tables owned by PostGIS extensions from autogenerate diffs.
+    """Exclude objects that exist in the database but aren't (and can't be)
+    declared in the ORM metadata, so autogenerate doesn't propose dropping
+    them on every run.
 
     `spatial_ref_sys` ships with the `postgis` extension itself, not one of
-    our models — without this, every autogenerate run would try to drop it.
+    our models. `_HAND_MAINTAINED_INDEXES` are expression indexes with a
+    PostgreSQL-specific operator class, created directly by a migration —
+    see each index's entry above for why it can't be expressed via
+    SQLAlchemy's `Index()` construct.
     """
     if type_ == "table":
         if name == "spatial_ref_sys":
             return False
         if getattr(object, "schema", None) in _EXCLUDED_POSTGIS_SCHEMAS:
             return False
+    if type_ == "index" and name in _HAND_MAINTAINED_INDEXES:
+        return False
     return True
 
 
@@ -76,6 +90,8 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_object=include_object,
+        render_item=render_item,
+        process_revision_directives=writer,
     )
 
     with context.begin_transaction():
@@ -87,6 +103,8 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         include_object=include_object,
+        render_item=render_item,
+        process_revision_directives=writer,
     )
 
     with context.begin_transaction():
