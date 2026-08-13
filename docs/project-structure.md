@@ -32,6 +32,13 @@ obur-backend/
 │   │   └── __init__.py        # business logic, DB queries, one module per resource
 │   ├── exceptions/
 │   │   └── __init__.py        # custom exceptions, one module per service domain
+│   ├── seeds/
+│   │   ├── __init__.py
+│   │   ├── venue_categories.py    # canonical slugs, language-independent
+│   │   ├── global_product_types.py
+│   │   └── locales/
+│   │       ├── __init__.py
+│   │       └── tr.py          # per-locale display names, one module per language
 │   ├── middleware/
 │   │   └── __init__.py        # rate limiting, logging, auth
 │   └── main.py                # FastAPI app, lifespan, middleware registration

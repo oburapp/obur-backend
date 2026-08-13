@@ -7,6 +7,7 @@ from sqlalchemy import CHAR, DateTime, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.i18n import DEFAULT_LOCALE
 from app.models.base import Base
 
 
@@ -36,7 +37,9 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
     city: Mapped[str | None] = mapped_column(String, nullable=True)
     country_code: Mapped[str | None] = mapped_column(CHAR(2), nullable=True)
-    locale: Mapped[str] = mapped_column(String, nullable=False, server_default="tr")
+    locale: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=DEFAULT_LOCALE
+    )
     timezone: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
