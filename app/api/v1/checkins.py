@@ -8,10 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.exceptions import (
+    BookmarkNotFoundError,
     CheckinNotFoundError,
     DuplicateProductRatingError,
     EmptyProductListError,
     FutureVisitDateError,
+    LikeNotFoundError,
     NotCheckinOwnerError,
     ProductNotAtVenueError,
     VenueNotFoundError,
@@ -23,8 +25,12 @@ from app.schemas.checkin import (
     CheckinResponse,
     CheckinUpdateRequest,
 )
+from app.services import bookmark as bookmark_service
 from app.services import checkin as checkin_service
+from app.services import like as like_service
 from app.services.checkin import ProductRating
+
+_CHECKIN_NOT_FOUND_DETAIL = "Checkin not found"
 
 router = APIRouter(prefix="/checkins", tags=["checkins"])
 
@@ -59,7 +65,7 @@ async def create_checkin(
             rating_value=payload.rating_value,
             note=payload.note,
             photo_url=payload.photo_url,
-            is_public=payload.is_public,
+            visibility=payload.visibility,
         )
     except VenueNotFoundError as e:
         raise HTTPException(
@@ -92,7 +98,7 @@ async def get_checkin(
         checkin = await checkin_service.get_checkin(session, checkin_id, viewer=viewer)
     except CheckinNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Checkin not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CHECKIN_NOT_FOUND_DETAIL
         ) from e
 
     return await _build_response(session, checkin)
@@ -117,7 +123,7 @@ async def update_checkin(
         )
     except CheckinNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Checkin not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CHECKIN_NOT_FOUND_DETAIL
         ) from e
     except NotCheckinOwnerError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
@@ -144,7 +150,75 @@ async def delete_checkin(
         )
     except CheckinNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Checkin not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CHECKIN_NOT_FOUND_DETAIL
         ) from e
     except NotCheckinOwnerError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+
+
+@router.post("/{checkin_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def like_checkin(
+    checkin_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Like a check-in. Idempotent. Liking a check-in you can't see
+    isn't possible — same visibility rules as `get_checkin`.
+    """
+    try:
+        await like_service.like_checkin(session, checkin_id, current_user=current_user)
+    except CheckinNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CHECKIN_NOT_FOUND_DETAIL
+        ) from e
+
+
+@router.delete("/{checkin_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def unlike_checkin(
+    checkin_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Un-like a check-in."""
+    try:
+        await like_service.unlike_checkin(
+            session, checkin_id, current_user=current_user
+        )
+    except LikeNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkin not liked"
+        ) from e
+
+
+@router.post("/{checkin_id}/bookmark", status_code=status.HTTP_204_NO_CONTENT)
+async def bookmark_checkin(
+    checkin_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Bookmark a check-in. Idempotent, private — never a social signal."""
+    try:
+        await bookmark_service.bookmark_checkin(
+            session, checkin_id, current_user=current_user
+        )
+    except CheckinNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CHECKIN_NOT_FOUND_DETAIL
+        ) from e
+
+
+@router.delete("/{checkin_id}/bookmark", status_code=status.HTTP_204_NO_CONTENT)
+async def unbookmark_checkin(
+    checkin_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Remove a check-in bookmark."""
+    try:
+        await bookmark_service.unbookmark_checkin(
+            session, checkin_id, current_user=current_user
+        )
+    except BookmarkNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Checkin not bookmarked"
+        ) from e
