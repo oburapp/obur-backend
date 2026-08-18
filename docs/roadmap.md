@@ -73,13 +73,44 @@ grew beyond its original one-line sketch for that reason.
 
 ## Phase 3 — Check-in Core Loop
 
-- `CHECKIN`, `CHECKIN_PRODUCT` models
-- Create-checkin service: one `CHECKIN` + N `CHECKIN_PRODUCT` rows in a single transaction
-- `POST /api/v1/checkins`, `GET /api/v1/venues/{id}/checkins`, `GET /api/v1/users/{id}/checkins`
-- Ownership authorization: a user may only edit/delete their own
-  check-ins. This is the first place "is this `current_user` allowed to do
-  this" matters — built here, alongside the endpoints that need it, not as
-  a separate upfront auth phase.
+- `CHECKIN`, `CHECKIN_PRODUCT` models. A product can't be rated twice in
+  the same check-in (unique constraint); `rating`/`rating_service`/
+  `rating_ambiance`/`rating_value` are all constrained to the PDD §8
+  four-point scale at the DB level, not just in application code.
+- Create-checkin service: one `CHECKIN` + N `CHECKIN_PRODUCT` rows in a
+  single transaction. Rejects an empty product list, a duplicate product
+  in the same submission, a product no longer available at the venue,
+  and a `visited_at` in the future relative to the visitor's own
+  timezone (`visited_tz`) — not the server's, since a visitor east of
+  UTC logging a visit in their early morning hours must not be rejected
+  just because the server's UTC date hasn't rolled over yet.
+- `is_public` is the only visibility control (no separate "contribute to
+  statistics" toggle — see the PDD's Step 5, and obur-docs for why that
+  toggle was dropped): it gates both feed visibility and aggregate
+  rating inclusion.
+- `POST/PATCH/DELETE /api/v1/checkins/{id}`, `GET /api/v1/checkins/{id}`,
+  `GET /api/v1/venues/{id}/checkins`, `GET /api/v1/users/{id}/checkins`.
+  A private check-in is invisible to anyone but its owner or an admin —
+  indistinguishable from a nonexistent one (404, not 403), so its
+  existence is never leaked.
+- Deleting a check-in is a soft delete (`deleted_at`), never a real
+  `DELETE` — a check-in that already contributed to an awarded badge or
+  an aggregate rating must not retroactively corrupt that history. A
+  separate admin-only endpoint (`DELETE /api/v1/admin/checkins/{id}`)
+  can permanently purge one, for moderation/takedown cases — deliberately
+  not a query flag on the regular delete endpoint, so a destructive,
+  irreversible action can't be triggered by accident.
+- `USER.role` (`user` | `admin`, a plain extensible string, not a
+  boolean): the first place authorization is more than "is this your own
+  resource" — an admin may act on anyone's. Never settable through any
+  user-facing endpoint or the Clerk webhook; the first admin account is
+  set directly in the database, once, by hand.
+- Ownership authorization (`app/core/authz.py`): a user may act on their
+  own check-in; an admin may act on anyone's. This is the first place
+  "is this `current_user` allowed to do this" matters — built here,
+  alongside the endpoints that need it, not as a separate upfront auth
+  phase — and written generically enough to be reused as-is once other
+  user-owned resources (Phase 4's lists, likes) exist.
 
 **Why now:** this is the product's core action (PDD §10) and the dependency root for aggregate scoring, badges, and feed — build and stabilize it before anything downstream consumes it.
 

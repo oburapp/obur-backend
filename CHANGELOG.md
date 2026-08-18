@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CHECKIN`, `CHECKIN_PRODUCT` models — a visit and its rated products,
+  created together in one transaction. A product can't be rated twice
+  in the same check-in; deleting a check-in is a soft delete, so a
+  badge or aggregate rating already computed from it can't be
+  retroactively corrupted
+- `USER.role` (`user` | `admin`) and an ownership/admin authorization
+  layer (`app/core/authz.py`): a user may act on their own check-ins,
+  an admin on anyone's. Never settable through any endpoint — the first
+  admin account is set directly in the database, by hand
+- `POST/GET/PATCH/DELETE /api/v1/checkins/{id}`,
+  `GET /api/v1/venues/{id}/checkins`, `GET /api/v1/users/{id}/checkins`
+  — a private check-in is invisible to anyone but its owner or an
+  admin, indistinguishable from a nonexistent one
+- `DELETE /api/v1/admin/checkins/{id}` — admin-only permanent deletion,
+  a separate endpoint from the regular (always-soft) delete so a
+  destructive, irreversible action can't be triggered by accident
+
+### Fixed
+
+- Several foreign key columns had no index despite being filtered in
+  real queries (`venues.added_by`/`category_id`,
+  `products.venue_id`/`global_type_id`, `venue_categories.parent_id`,
+  `global_product_types.category_id`,
+  `venue_saves.user_id`/`venue_id`)
+
 ## [0.3.0] - 2026-08-13
 
 ### Added

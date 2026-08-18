@@ -51,37 +51,53 @@ remember to migrate it by hand, and it can never silently drift from what
 
 ## N+1 query prevention
 
-Every endpoint or service function that returns a list of ORM objects
-*and* resolves related data through a SQLAlchemy `relationship()` (not
-just a raw FK id) must have an integration test asserting the number of
-SQL statements executed stays constant as the list grows — not only the
-first such endpoint built, every one. A working `joinedload`/`selectinload`
-call today doesn't guarantee the next person touching that code path
-keeps it that way; a query-count assertion catches a regression to lazy
-loading the same way a snapshot test catches an unintended output change.
+Every endpoint or service function that returns a list of items *and*
+attaches each item's related data — whether via a SQLAlchemy
+`relationship()` with `joinedload`/`selectinload`, or via a manual
+batched fetch (e.g. one `WHERE parent_id IN (...)` query grouped in
+Python) — must have an integration test asserting the number of SQL
+statements executed stays constant as the list grows. Not just the
+first such endpoint built: every one. Working eager-loading code today
+doesn't guarantee the next person touching that code path keeps it that
+way; a query-count assertion catches a regression to a per-row fetch the
+same way a snapshot test catches an unintended output change.
 
-Mechanism: a `db_session`-scoped fixture that counts statements via
-SQLAlchemy's `before_cursor_execute` event, so a test can do something
-like:
+Mechanism: `query_counter`, a fixture in `tests/integration/conftest.py`
+wired to `db_session`'s own connection via SQLAlchemy's
+`before_cursor_execute` event. Reset it right before the operation under
+test, run the same operation against two differently-sized result sets,
+and assert the count didn't grow:
 
 ```python
-async def test_list_venues_with_products_does_not_n_plus_1(
-    db_session, query_counter
+async def test_list_venue_checkins_does_not_scale_with_result_size(
+    client_with_db_session, db_session, query_counter
 ) -> None:
-    # ... create N venues, each with products ...
-    with query_counter() as count:
-        await venue_service.list_venues_with_products(db_session, limit=20, offset=0)
-    assert count() <= _EXPECTED_QUERY_COUNT  # constant, not O(N)
+    # ... create 1 check-in, then list them ...
+    query_counter.reset()
+    small = await client_with_db_session.get(f"/api/v1/venues/{venue_id}/checkins")
+    small_count = query_counter.count
+
+    # ... create 4 more check-ins, then list again ...
+    query_counter.reset()
+    large = await client_with_db_session.get(f"/api/v1/venues/{venue_id}/checkins")
+
+    assert query_counter.count == small_count  # constant, not O(N)
 ```
 
-As of Phase 2 (Venues & Products), no model declares a `relationship()`
-yet — every response schema serializes only scalar columns of the object
-itself, so there's currently no code path where N+1 is possible, and no
-`query_counter` fixture exists yet either. The first phase that adds a
-`relationship()` and eager-loads it must also add this fixture (in
-`tests/integration/conftest.py`) and the first test using it — from then
-on, it applies to every relational list endpoint added after, not just
-that first one.
+Comparing two result sizes within the same test — rather than asserting
+an exact count — sidesteps incidental per-session overhead (e.g. the
+`SAVEPOINT` `db_session`'s transaction-joining mode issues on first use)
+that would otherwise make a hardcoded expected count fragile.
+
+First introduced in Phase 3 (Check-in Core Loop): `GET
+/venues/{id}/checkins` batches each returned check-in's product ratings
+in one `checkin_id IN (...)` query
+(`app.services.checkin.get_products_for_checkins`) rather than querying
+per check-in in a loop — see
+`tests/integration/test_checkins_endpoint_integration.py`. No model
+declares an ORM `relationship()` yet; when one first does, the same
+fixture and the same comparative pattern apply, just against
+`selectinload` instead of a hand-written batch query.
 
 ## Coverage
 
