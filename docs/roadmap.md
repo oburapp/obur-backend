@@ -62,7 +62,11 @@ grew beyond its original one-line sketch for that reason.
 
 - `VENUE_CATEGORY` (+ translation), `GLOBAL_PRODUCT_TYPE` (+ translation), `VENUE`, `PRODUCT`, `VENUE_SAVE` models
 - Venue creation with 50m-radius duplicate detection (PostGIS)
-- Venue search (PostgreSQL FTS, Turkish config)
+- Venue search: `pg_trgm` word-similarity matching on name, diacritics
+  folded via `unaccent` — language-agnostic and typo-tolerant, chosen
+  over PostgreSQL FTS's language-locked config once the requirement was
+  clarified as "any language, partial input, typos" (see ADR-0003 in
+  obur-docs)
 - `GET/POST /api/v1/venues`, `GET/POST /api/v1/products`
 
 **Why now:** check-ins reference a venue and its products — this domain has to exist before check-ins can.
