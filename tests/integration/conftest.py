@@ -1,12 +1,13 @@
 """Fixtures specific to integration tests."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import engine, get_session
@@ -50,6 +51,37 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
             await connection.rollback()
+
+
+class QueryCounter:
+    """Counts SQL statements executed on a connection, resettable
+    mid-test so a setup phase's queries don't pollute the measurement.
+    See docs/testing-strategy.md's N+1 query prevention section.
+    """
+
+    def __init__(self) -> None:
+        self.count = 0
+
+    def reset(self) -> None:
+        self.count = 0
+
+    def _on_execute(self, *_args: object, **_kwargs: object) -> None:
+        self.count += 1
+
+
+@pytest.fixture
+def query_counter(db_session: AsyncSession) -> Generator[QueryCounter, None, None]:
+    """A `QueryCounter` wired to `db_session`'s own connection — use
+    `.reset()` right before the operation under test, then assert on
+    `.count` (typically: unchanged as the result set grows).
+    """
+    counter = QueryCounter()
+    sync_connection = db_session.bind.sync_connection  # type: ignore[union-attr]
+    event.listen(sync_connection, "before_cursor_execute", counter._on_execute)
+    try:
+        yield counter
+    finally:
+        event.remove(sync_connection, "before_cursor_execute", counter._on_execute)
 
 
 @pytest.fixture

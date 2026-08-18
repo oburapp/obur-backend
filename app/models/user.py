@@ -11,6 +11,22 @@ from app.core.i18n import DEFAULT_LOCALE
 from app.models.base import Base
 
 
+class UserRole:
+    """Allowed values for `User.role`.
+
+    A plain string, not a boolean `is_admin` — adding a tier later (e.g.
+    a moderator role) is a new allowed value, not a schema change. Never
+    settable through any user-facing endpoint or the Clerk webhook — see
+    `app.core.authz`.
+    """
+
+    USER = "user"
+    ADMIN = "admin"
+
+
+_DEFAULT_USER_ROLE = UserRole.USER
+
+
 class User(Base):
     """A registered Obur user, identity-linked to an external auth provider.
 
@@ -41,6 +57,9 @@ class User(Base):
         String, nullable=False, server_default=DEFAULT_LOCALE
     )
     timezone: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=_DEFAULT_USER_ROLE
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

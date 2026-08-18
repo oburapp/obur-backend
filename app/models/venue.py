@@ -54,10 +54,13 @@ class Venue(Base):
     address_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_places_id: Mapped[str | None] = mapped_column(String, nullable=True)
     added_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     category_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("venue_categories.id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("venue_categories.id"),
+        nullable=False,
+        index=True,
     )
     city: Mapped[str | None] = mapped_column(String, nullable=True)
     country_code: Mapped[str | None] = mapped_column(CHAR(2), nullable=True)

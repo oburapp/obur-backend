@@ -24,7 +24,10 @@ class GlobalProductType(Base):
     )
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     category_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("venue_categories.id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("venue_categories.id"),
+        nullable=False,
+        index=True,
     )
 
 

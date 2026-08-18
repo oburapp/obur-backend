@@ -5,6 +5,15 @@ from app.exceptions.auth_exceptions import (
     InvalidTokenError,
     InvalidWebhookSignatureError,
 )
+from app.exceptions.checkin_exceptions import (
+    CheckinError,
+    CheckinNotFoundError,
+    DuplicateProductRatingError,
+    EmptyProductListError,
+    FutureVisitDateError,
+    NotCheckinOwnerError,
+    ProductNotAtVenueError,
+)
 from app.exceptions.venue_exceptions import (
     DuplicateVenueNearbyError,
     GlobalProductTypeNotFoundError,
@@ -17,11 +26,18 @@ from app.exceptions.venue_exceptions import (
 
 __all__ = [
     "AuthError",
+    "CheckinError",
+    "CheckinNotFoundError",
+    "DuplicateProductRatingError",
     "DuplicateVenueNearbyError",
+    "EmptyProductListError",
+    "FutureVisitDateError",
     "GlobalProductTypeNotFoundError",
     "InvalidTokenError",
     "InvalidWebhookSignatureError",
+    "NotCheckinOwnerError",
     "ProductError",
+    "ProductNotAtVenueError",
     "ProductNotFoundError",
     "VenueCategoryNotFoundError",
     "VenueError",

@@ -20,4 +20,5 @@ class UserResponse(BaseModel):
     country_code: str | None
     locale: str
     timezone: str | None
+    role: str
     created_at: datetime

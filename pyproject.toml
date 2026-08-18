@@ -12,6 +12,7 @@ dependencies = [
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.0.52",
     "svix>=1.99.1",
+    "tzdata>=2026.3",
     "uvicorn[standard]>=0.52.1",
 ]
 

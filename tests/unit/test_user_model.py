@@ -18,7 +18,14 @@ def test_user_auth_identity_is_unique_together() -> None:
 
 def test_user_required_fields_are_not_nullable() -> None:
     columns = User.__table__.columns
-    for name in ["id", "auth_provider", "auth_provider_id", "locale", "created_at"]:
+    for name in [
+        "id",
+        "auth_provider",
+        "auth_provider_id",
+        "locale",
+        "role",
+        "created_at",
+    ]:
         assert columns[name].nullable is False, name
 
 

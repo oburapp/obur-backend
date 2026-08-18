@@ -23,10 +23,13 @@ class Product(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     venue_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("venues.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("venues.id"), nullable=False, index=True
     )
     global_type_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("global_product_types.id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("global_product_types.id"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     is_available: Mapped[bool] = mapped_column(
