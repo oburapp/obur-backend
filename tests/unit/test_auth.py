@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import IntegrityError
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_optional_current_user
 from app.exceptions import InvalidTokenError
 from app.models.user import User
 
@@ -100,3 +100,28 @@ async def test_get_current_user_raises_401_on_invalid_token(
         await get_current_user(MagicMock(), AsyncMock())
 
     assert exc_info.value.status_code == 401
+
+
+async def test_get_optional_current_user_returns_none_on_invalid_token(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch(
+        "app.core.auth.verify_session",
+        AsyncMock(side_effect=InvalidTokenError("bad token")),
+    )
+
+    result = await get_optional_current_user(MagicMock(), AsyncMock())
+
+    assert result is None
+
+
+async def test_get_optional_current_user_returns_user_on_valid_token(
+    mocker: MockerFixture,
+) -> None:
+    existing = User(id=uuid4(), auth_provider="clerk", auth_provider_id="user_123")
+    mocker.patch("app.core.auth.verify_session", AsyncMock(return_value="user_123"))
+    session = _session_returning(existing)
+
+    result = await get_optional_current_user(MagicMock(), session)
+
+    assert result is existing
