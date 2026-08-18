@@ -2,10 +2,13 @@
 ratings, a note, a photo, and the products logged during the visit (see
 CheckinProduct in app/models/checkin_product.py).
 
-`is_public` is the only visibility control — see the PDD's Check-in
-Flow section. It gates both feed visibility and inclusion in aggregate
+`visibility` (see app.core.visibility.Visibility) is the only
+visibility control — see the PDD's Check-in Flow section and ADR-0006
+in obur-docs. It gates both feed visibility and inclusion in aggregate
 rating calculations; there is deliberately no separate toggle for the
-latter (see docs/roadmap.md Phase 3).
+latter (see docs/roadmap.md Phase 3). `LIST` and `VENUE_SAVE` use the
+same three tiers and the same authorization check
+(`app.core.authz.can_view`).
 
 Deletion is soft (`deleted_at`), not a real `DELETE`, so a check-in that
 already contributed to an awarded badge or an aggregate rating doesn't
@@ -17,7 +20,6 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -31,21 +33,35 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.ratings import MAX_RATING, MIN_RATING
+from app.core.visibility import Visibility
 from app.models.base import Base
 
-_DEFAULT_IS_PUBLIC = True
+_DEFAULT_VISIBILITY = Visibility.PUBLIC
+_ALLOWED_VISIBILITIES = (
+    Visibility.PUBLIC,
+    Visibility.CLOSE_FRIENDS,
+    Visibility.PRIVATE,
+)
 
 
 class Checkin(Base):
     """A single visit: who, where, and (optionally) how it went."""
 
     __tablename__ = "checkins"
-    __table_args__ = tuple(
+    __table_args__ = (
+        *(
+            CheckConstraint(
+                f"{column} IS NULL OR {column} BETWEEN {MIN_RATING} AND {MAX_RATING}",
+                name=f"ck_checkins_{column}_range",
+            )
+            for column in ("rating_service", "rating_ambiance", "rating_value")
+        ),
         CheckConstraint(
-            f"{column} IS NULL OR {column} BETWEEN {MIN_RATING} AND {MAX_RATING}",
-            name=f"ck_checkins_{column}_range",
-        )
-        for column in ("rating_service", "rating_ambiance", "rating_value")
+            "visibility IN ("
+            + ", ".join(f"'{value}'" for value in _ALLOWED_VISIBILITIES)
+            + ")",
+            name="ck_checkins_visibility_allowed",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -65,8 +81,8 @@ class Checkin(Base):
     # (docs/roadmap.md). Same "field exists, integration deferred"
     # pattern as Venue.google_places_id (see ADR-0002 in obur-docs).
     photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
-    is_public: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=_DEFAULT_IS_PUBLIC
+    visibility: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=_DEFAULT_VISIBILITY
     )
     visited_at: Mapped[date] = mapped_column(Date, nullable=False)
     visited_tz: Mapped[str] = mapped_column(String, nullable=False)

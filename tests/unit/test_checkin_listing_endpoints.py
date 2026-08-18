@@ -9,6 +9,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
 
+from app.core.visibility import Visibility
 from app.models.checkin import Checkin
 
 
@@ -22,7 +23,7 @@ def _checkin(**overrides: object) -> Checkin:
         "rating_value": None,
         "note": None,
         "photo_url": None,
-        "is_public": True,
+        "visibility": Visibility.PUBLIC,
         "visited_at": date.today(),
         "visited_tz": "Europe/Istanbul",
         "created_at": datetime.now(UTC),

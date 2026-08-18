@@ -104,6 +104,17 @@ fixture and the same comparative pattern apply, just against
 Minimum 98%, enforced via `pytest-cov` (see `[tool.coverage]` in
 `pyproject.toml`). Applies to the combined unit + integration suite.
 
+`[tool.coverage.run]` sets `concurrency = ["greenlet"]`. Without it,
+coverage.py silently undercounts otherwise-executed lines inside
+integration tests: SQLAlchemy's async engine bridges sync DBAPI calls
+into the event loop via `greenlet_spawn`, and exception propagation
+across that boundary (e.g. a service raising inside a `db_session`-backed
+test) isn't tracked by the default tracer. Found empirically — a route's
+`except` branch was verified to run correctly (the test asserted the
+right HTTP status) while still showing as "missing" in the coverage
+report, for every endpoint exercised only through `client_with_db_session`
+rather than a mocked unit test.
+
 ## Fixtures
 
 Shared fixtures live in `tests/conftest.py` (app-wide) or

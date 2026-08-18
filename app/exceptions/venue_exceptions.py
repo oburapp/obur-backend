@@ -38,3 +38,13 @@ class ProductNotFoundError(ProductError):
 
 class GlobalProductTypeNotFoundError(ProductError):
     """Raised when a product references a global product type that doesn't exist."""
+
+
+class VenueSaveNotFoundError(VenueError):
+    """Raised when a venue save id doesn't match any (visible) row."""
+
+
+class NotVenueSaveOwnerError(VenueError):
+    """Raised when a non-owner, non-admin user attempts to modify or
+    delete a venue save.
+    """

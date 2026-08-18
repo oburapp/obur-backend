@@ -116,10 +116,72 @@ grew beyond its original one-line sketch for that reason.
 
 ## Phase 4 — Social Graph & Engagement
 
-- `FOLLOW`, `LIKE`, `LIST`, `LIST_ITEM` models
-- Follow/unfollow, followers/following endpoints
-- Like/unlike a check-in
-- List CRUD
+- `FOLLOW`: one-directional, no approval required (self-follow rejected
+  at both the service layer and a DB `CHECK` constraint). Either party
+  can end it — the follower unfollowing, or the followed user removing
+  that follower from their own followers list.
+- Shared three-tier `visibility` (`public` / `close_friends` / `private`)
+  replacing `CHECKIN`'s old `is_public` boolean, extended identically to
+  `LIST` and `VENUE_SAVE` — one authorization function
+  (`app.core.authz.can_view`) enforces all three alike. `VENUE_SAVE`
+  defaults to `private` (unlike `CHECKIN`/`LIST`'s `public` default) —
+  saving a venue is a personal tracking action first. See ADR-0006 in
+  obur-docs.
+- `CLOSE_FRIEND`: a manually curated subset of a user's own followers,
+  not a "followers-only" tier — the open, no-approval follow model gives
+  "followers-only" no real access-control meaning. The composite foreign
+  key to `FOLLOW` (`ON DELETE CASCADE`) does two jobs at the database
+  level: a close friend must currently be a follower, and unfollowing
+  automatically revokes close-friend status. Modeled on Letterboxd's own
+  close-friends feature — verified against a real comparable product,
+  not designed from first principles.
+- `LIST`, `LIST_ITEM`: real (hard) delete, unlike `CHECKIN`'s soft
+  delete — no badge or aggregate depends on list contents. Item ordering
+  uses fractional indexing (`ListItem.position`, the
+  `fractional-indexing` package), so inserting, moving, or removing an
+  item writes only that one row, never renumbering neighbors. Requires
+  `COLLATE "C"` on the column — found and fixed via an empirical
+  before/after test against the real database after the default
+  locale-aware collation was found to silently break the algorithm's
+  byte-ordering assumption. See ADR-0007 in obur-docs.
+- `CHECKIN_LIKE`, `LIST_LIKE`: a visible social signal, separate tables
+  per target type (not a shared polymorphic table) for real foreign-key
+  integrity. Liking something requires being able to see it first — a
+  private check-in can't be liked by anyone but its owner.
+- `CHECKIN_BOOKMARK`, `LIST_BOOKMARK`: a private save-for-later note,
+  always separate from likes — no bookmark count is ever exposed to
+  anyone but the bookmarker. Listing bookmarks re-checks the target's
+  current visibility, not just its visibility at bookmark time — content
+  made private after being bookmarked silently drops out of the
+  bookmarker's own list too. See ADR-0006 in obur-docs.
+- `NOTIFICATION`: created synchronously, in the same transaction as the
+  action that triggers it — no queue, no background worker.
+  `read_at` lives on the backend row (not per-device client state), so
+  read status is automatically consistent across every device a user is
+  signed into. `target_type`/`target_id` deliberately isn't a real
+  foreign key, unlike the like/bookmark tables — a notification is a
+  transient record, not data whose own correctness depends on the
+  target still existing. See ADR-0008 in obur-docs.
+- Existence-leak fix applied uniformly across `CHECKIN`, `LIST`, and
+  `VENUE_SAVE` mutation endpoints (`app.core.authz.ensure_visible_and_owned`):
+  a non-owner acting on a resource they can't even see gets the same 404
+  a nonexistent id would, never a 403 that would confirm the id belongs
+  to something real — found via adversarial testing (a stranger `PATCH`ing
+  a private check-in got 403, leaking its existence, before the fix) and
+  applied to every owner-gated mutation across all three resource types,
+  not just the one it was first found on.
+- Endpoints: `POST/DELETE /users/{id}/follow`, `GET /users/{id}/followers`,
+  `GET /users/{id}/following`, `DELETE /users/me/followers/{id}`,
+  `POST/DELETE /users/me/close-friends/{id}`, `GET /users/me/close-friends`,
+  full `LIST` CRUD plus item add/move/remove
+  (`POST/GET/PATCH/DELETE /lists/...`), `POST/DELETE /checkins/{id}/like`,
+  `POST/DELETE /lists/{id}/like`, `POST/DELETE /checkins/{id}/bookmark`,
+  `POST/DELETE /lists/{id}/bookmark`, `GET /users/me/bookmarks/checkins`,
+  `GET /users/me/bookmarks/lists`, full `VENUE_SAVE` CRUD
+  (`POST/GET/PATCH/DELETE /venue-saves/...`), `GET /users/{id}/lists`,
+  `GET /users/{id}/venue-saves`, `GET /users/me/notifications`,
+  `GET /users/me/notifications/unread-count`,
+  `POST /users/me/notifications/read-all`.
 
 **Why now:** depends on both USER (Phase 1) and CHECKIN (Phase 3) existing; feeds in Phase 6 depend on FOLLOW.
 

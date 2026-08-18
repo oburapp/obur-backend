@@ -8,10 +8,16 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.authz import is_owner_or_admin
+from app.core.authz import (
+    can_view,
+    close_friend_of_owner_exists,
+    ensure_visible_and_owned,
+    is_owner_or_admin,
+)
+from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
     DuplicateProductRatingError,
@@ -37,7 +43,7 @@ _EDITABLE_FIELDS = frozenset(
         "rating_value",
         "note",
         "photo_url",
-        "is_public",
+        "visibility",
         "visited_at",
     }
 )
@@ -79,7 +85,7 @@ async def create_checkin(
     rating_value: int | None = None,
     note: str | None = None,
     photo_url: str | None = None,
-    is_public: bool = True,
+    visibility: str = Visibility.PUBLIC,
 ) -> Checkin:
     """Create a check-in and its product ratings in one transaction.
 
@@ -130,7 +136,7 @@ async def create_checkin(
         rating_value=rating_value,
         note=note,
         photo_url=photo_url,
-        is_public=is_public,
+        visibility=visibility,
         visited_at=visited_at,
         visited_tz=visited_tz,
     )
@@ -157,16 +163,17 @@ async def get_checkin(
     """Return a check-in by id.
 
     Raises `CheckinNotFoundError` if it doesn't exist, is soft-deleted,
-    or is private and `viewer` isn't its owner or an admin — a private
+    or `viewer` isn't allowed to see it per its `visibility` — a hidden
     check-in looks identical to a nonexistent one to anyone else, so its
     existence is never leaked.
     """
     checkin = await session.get(Checkin, checkin_id)
     if checkin is None or checkin.deleted_at is not None:
         raise CheckinNotFoundError(f"checkin not found: {checkin_id}")
-    if not checkin.is_public and (
-        viewer is None or not is_owner_or_admin(checkin.user_id, viewer)
-    ):
+    allowed = await can_view(
+        session, owner_id=checkin.user_id, visibility=checkin.visibility, viewer=viewer
+    )
+    if not allowed:
         raise CheckinNotFoundError(f"checkin not found: {checkin_id}")
     return checkin
 
@@ -201,17 +208,23 @@ async def list_checkins_for_venue(
     limit: int,
     offset: int,
 ) -> list[Checkin]:
-    """List a venue's check-ins, newest first.
-
-    A private check-in only appears for its own owner or an admin —
-    everyone else sees only public ones.
+    """List a venue's check-ins, newest first, filtered to what `viewer`
+    is allowed to see (see app.core.authz.can_view) — an admin sees
+    everything.
     """
     conditions = [Checkin.venue_id == venue_id, Checkin.deleted_at.is_(None)]
     if viewer is None:
-        conditions.append(Checkin.is_public.is_(True))
+        conditions.append(Checkin.visibility == Visibility.PUBLIC)
     elif viewer.role != UserRole.ADMIN:
         conditions.append(
-            or_(Checkin.is_public.is_(True), Checkin.user_id == viewer.id)
+            or_(
+                Checkin.visibility == Visibility.PUBLIC,
+                Checkin.user_id == viewer.id,
+                and_(
+                    Checkin.visibility == Visibility.CLOSE_FRIENDS,
+                    close_friend_of_owner_exists(Checkin.user_id, viewer.id),
+                ),
+            )
         )
     result = await session.execute(
         select(Checkin)
@@ -231,15 +244,23 @@ async def list_checkins_for_user(
     limit: int,
     offset: int,
 ) -> list[Checkin]:
-    """List a user's check-ins, newest first.
-
-    Private check-ins are only included when `viewer` is that same user
-    or an admin — everyone else sees only public ones.
+    """List a user's check-ins, newest first, filtered to what `viewer`
+    is allowed to see (see app.core.authz.can_view) — an admin sees
+    everything.
     """
     conditions = [Checkin.user_id == target_user_id, Checkin.deleted_at.is_(None)]
-    sees_private = viewer is not None and is_owner_or_admin(target_user_id, viewer)
-    if not sees_private:
-        conditions.append(Checkin.is_public.is_(True))
+    if viewer is None:
+        conditions.append(Checkin.visibility == Visibility.PUBLIC)
+    elif not is_owner_or_admin(target_user_id, viewer):
+        conditions.append(
+            or_(
+                Checkin.visibility == Visibility.PUBLIC,
+                and_(
+                    Checkin.visibility == Visibility.CLOSE_FRIENDS,
+                    close_friend_of_owner_exists(Checkin.user_id, viewer.id),
+                ),
+            )
+        )
     result = await session.execute(
         select(Checkin)
         .where(*conditions)
@@ -268,10 +289,16 @@ async def update_checkin(
     checkin = await session.get(Checkin, checkin_id)
     if checkin is None or checkin.deleted_at is not None:
         raise CheckinNotFoundError(f"checkin not found: {checkin_id}")
-    if not is_owner_or_admin(checkin.user_id, current_user):
-        raise NotCheckinOwnerError(
-            f"user {current_user.id} may not modify checkin {checkin_id}"
-        )
+    await ensure_visible_and_owned(
+        session,
+        owner_id=checkin.user_id,
+        visibility=checkin.visibility,
+        current_user=current_user,
+        not_found_error=CheckinNotFoundError,
+        not_found_message=f"checkin not found: {checkin_id}",
+        not_owner_error=NotCheckinOwnerError,
+        not_owner_message=f"user {current_user.id} may not modify checkin {checkin_id}",
+    )
 
     if "visited_at" in updates:
         _ensure_visited_at_not_future(updates["visited_at"], checkin.visited_tz)  # type: ignore[arg-type]
@@ -299,10 +326,16 @@ async def soft_delete_checkin(
     checkin = await session.get(Checkin, checkin_id)
     if checkin is None or checkin.deleted_at is not None:
         raise CheckinNotFoundError(f"checkin not found: {checkin_id}")
-    if not is_owner_or_admin(checkin.user_id, current_user):
-        raise NotCheckinOwnerError(
-            f"user {current_user.id} may not delete checkin {checkin_id}"
-        )
+    await ensure_visible_and_owned(
+        session,
+        owner_id=checkin.user_id,
+        visibility=checkin.visibility,
+        current_user=current_user,
+        not_found_error=CheckinNotFoundError,
+        not_found_message=f"checkin not found: {checkin_id}",
+        not_owner_error=NotCheckinOwnerError,
+        not_owner_message=f"user {current_user.id} may not delete checkin {checkin_id}",
+    )
 
     checkin.deleted_at = datetime.now(UTC)
     await session.commit()

@@ -22,3 +22,18 @@ class UserResponse(BaseModel):
     timezone: str | None
     role: str
     created_at: datetime
+
+
+class UserSummaryResponse(BaseModel):
+    """Lightweight public shape of a User, for appearing in someone
+    else's followers/following/close-friends list. Deliberately omits
+    `email` and other fields with no reason to be visible to anyone but
+    the user themselves — see `UserResponse` for that fuller shape.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    username: str | None
+    bio: str | None
+    avatar_url: str | None

@@ -3,9 +3,11 @@
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
     DuplicateProductRatingError,
@@ -36,7 +38,7 @@ def _checkin(**overrides: object) -> Checkin:
         "id": uuid4(),
         "user_id": uuid4(),
         "venue_id": uuid4(),
-        "is_public": True,
+        "visibility": Visibility.PUBLIC,
         "visited_at": date.today(),
         "visited_tz": _TZ,
         "deleted_at": None,
@@ -107,7 +109,7 @@ async def test_create_checkin_raises_on_duplicate_product() -> None:
 
 async def test_create_checkin_raises_on_future_visit_date() -> None:
     session = _session_for_create(venue=MagicMock(spec=Venue), available_product_ids=[])
-    tomorrow = datetime.now(UTC).date() + timedelta(days=1)
+    tomorrow = datetime.now(ZoneInfo(_TZ)).date() + timedelta(days=1)
 
     with pytest.raises(FutureVisitDateError):
         await checkin_service.create_checkin(
@@ -167,7 +169,9 @@ async def test_get_checkin_raises_when_not_found() -> None:
 async def test_get_checkin_raises_when_soft_deleted() -> None:
     session = AsyncMock()
     session.get = AsyncMock(
-        return_value=_checkin(deleted_at=datetime.now(UTC), is_public=True)
+        return_value=_checkin(
+            deleted_at=datetime.now(UTC), visibility=Visibility.PUBLIC
+        )
     )
 
     with pytest.raises(CheckinNotFoundError):
@@ -176,7 +180,7 @@ async def test_get_checkin_raises_when_soft_deleted() -> None:
 
 async def test_get_checkin_raises_when_private_and_no_viewer() -> None:
     session = AsyncMock()
-    session.get = AsyncMock(return_value=_checkin(is_public=False))
+    session.get = AsyncMock(return_value=_checkin(visibility=Visibility.PRIVATE))
 
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.get_checkin(session, uuid4(), viewer=None)
@@ -184,7 +188,9 @@ async def test_get_checkin_raises_when_private_and_no_viewer() -> None:
 
 async def test_get_checkin_raises_when_private_and_viewer_is_not_owner() -> None:
     session = AsyncMock()
-    session.get = AsyncMock(return_value=_checkin(is_public=False, user_id=uuid4()))
+    session.get = AsyncMock(
+        return_value=_checkin(visibility=Visibility.PRIVATE, user_id=uuid4())
+    )
 
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.get_checkin(session, uuid4(), viewer=_user())
@@ -193,30 +199,34 @@ async def test_get_checkin_raises_when_private_and_viewer_is_not_owner() -> None
 async def test_get_checkin_returns_private_checkin_to_its_owner() -> None:
     owner = _user()
     session = AsyncMock()
-    session.get = AsyncMock(return_value=_checkin(is_public=False, user_id=owner.id))
+    session.get = AsyncMock(
+        return_value=_checkin(visibility=Visibility.PRIVATE, user_id=owner.id)
+    )
 
     result = await checkin_service.get_checkin(session, uuid4(), viewer=owner)
 
-    assert result.is_public is False
+    assert result.visibility == Visibility.PRIVATE
 
 
 async def test_get_checkin_returns_private_checkin_to_an_admin() -> None:
     admin = _user(role=UserRole.ADMIN)
     session = AsyncMock()
-    session.get = AsyncMock(return_value=_checkin(is_public=False, user_id=uuid4()))
+    session.get = AsyncMock(
+        return_value=_checkin(visibility=Visibility.PRIVATE, user_id=uuid4())
+    )
 
     result = await checkin_service.get_checkin(session, uuid4(), viewer=admin)
 
-    assert result.is_public is False
+    assert result.visibility == Visibility.PRIVATE
 
 
 async def test_get_checkin_returns_public_checkin_to_anyone() -> None:
     session = AsyncMock()
-    session.get = AsyncMock(return_value=_checkin(is_public=True))
+    session.get = AsyncMock(return_value=_checkin(visibility=Visibility.PUBLIC))
 
     result = await checkin_service.get_checkin(session, uuid4(), viewer=None)
 
-    assert result.is_public is True
+    assert result.visibility == Visibility.PUBLIC
 
 
 async def test_update_checkin_raises_when_not_found() -> None:
@@ -243,7 +253,7 @@ async def test_update_checkin_raises_on_future_visit_date() -> None:
     owner = _user()
     session = AsyncMock()
     session.get = AsyncMock(return_value=_checkin(user_id=owner.id))
-    tomorrow = datetime.now(UTC).date() + timedelta(days=1)
+    tomorrow = datetime.now(ZoneInfo(_TZ)).date() + timedelta(days=1)
 
     with pytest.raises(FutureVisitDateError):
         await checkin_service.update_checkin(

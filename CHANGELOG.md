@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `FOLLOW` and `CLOSE_FRIEND` models — one-directional, no-approval
+  following, plus a manually curated close-friends list (a subset of a
+  user's own followers) that grants access to `close_friends`-visibility
+  content. A close friend can never outlive the follow it depended on:
+  the composite foreign key to `FOLLOW` cascades the removal
+  automatically on unfollow
+- Shared three-tier `visibility` (`public`/`close_friends`/`private`)
+  replacing `CHECKIN.is_public`, extended identically to the new `LIST`
+  and `VENUE_SAVE` models — one authorization function
+  (`app.core.authz.can_view`) for all three
+- `LIST`/`LIST_ITEM` models and full CRUD, including item add/move/remove
+  with fractional-indexing ordering (`fractional-indexing` package) — an
+  insert, move, or removal writes only the one row being changed
+- `CHECKIN_LIKE`/`LIST_LIKE` and `CHECKIN_BOOKMARK`/`LIST_BOOKMARK`
+  models — likes are a visible signal, bookmarks are always private with
+  no exposed count; both require the actor to already be able to see the
+  target
+- `NOTIFICATION` model, created synchronously in the same transaction as
+  the triggering action (new follower, check-in like, list like) — no
+  queue or background worker; `read_at` lives on the backend row for
+  automatic cross-device consistency
+- Endpoints for all of the above: follow/unfollow/followers/following,
+  close-friends add/remove/list, list CRUD + items + like + bookmark,
+  check-in like + bookmark, venue-save CRUD, and notification
+  list/unread-count/mark-all-read
+- `app.core.authz.ensure_visible_and_owned`: a shared guard for every
+  owner-gated mutation (`CHECKIN`, `LIST`, `VENUE_SAVE` update/delete)
+  that checks visibility before ownership, so a non-owner who can't even
+  see a resource gets the same 404 a nonexistent id would — never a 403
+  that would leak the id's existence
+
+### Fixed
+
+- A stranger `PATCH`ing or `DELETE`ing a private check-in, list, or
+  venue save they don't own got a 403 (confirming the resource exists)
+  instead of the 404 a nonexistent id would get, contradicting this
+  codebase's own stated design goal that a hidden resource must be
+  indistinguishable from a nonexistent one. Found via adversarial
+  testing, not a bug report; fixed uniformly across all three resource
+  types via `ensure_visible_and_owned` (see Added above)
+- Listing a user's bookmarked check-ins/lists returned entries whose
+  target had since been made private (or soft-deleted) by its owner,
+  even though the bookmarker could no longer actually view them —
+  bookmark listings now re-check visibility at read time, not just at
+  bookmark time
+- `venue_saves.type` had no database-level constraint on its allowed
+  values, unlike `visibility` on the same table — added a `CHECK`
+  constraint matching the existing pattern
+- `pyproject.toml`'s coverage config was missing
+  `concurrency = ["greenlet"]`; without it, coverage.py silently
+  undercounted exception branches inside integration tests, since
+  SQLAlchemy's async engine bridges sync DBAPI calls into the event loop
+  via `greenlet_spawn`
+
 ## [0.4.0] - 2026-08-18
 
 ### Added

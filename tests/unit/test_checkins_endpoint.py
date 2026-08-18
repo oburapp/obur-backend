@@ -8,7 +8,9 @@ from httpx import AsyncClient, Response
 from pytest_mock import MockerFixture
 
 from app.core.auth import get_current_user, get_optional_current_user
+from app.core.visibility import Visibility
 from app.exceptions import (
+    BookmarkNotFoundError,
     CheckinNotFoundError,
     DuplicateProductRatingError,
     EmptyProductListError,
@@ -34,7 +36,7 @@ def _checkin(**overrides: object) -> Checkin:
         "rating_value": None,
         "note": None,
         "photo_url": None,
-        "is_public": True,
+        "visibility": Visibility.PUBLIC,
         "visited_at": date.today(),
         "visited_tz": "Europe/Istanbul",
         "created_at": datetime.now(UTC),
@@ -305,12 +307,46 @@ async def test_delete_checkin_returns_404_when_not_found(
     assert response.status_code == 404
 
 
+async def test_bookmark_checkin_returns_404_when_checkin_not_found(
+    client: AsyncClient, mocker: MockerFixture
+) -> None:
+    mocker.patch(
+        "app.api.v1.checkins.bookmark_service.bookmark_checkin",
+        AsyncMock(side_effect=CheckinNotFoundError("nope")),
+    )
+    app.dependency_overrides[get_current_user] = lambda: _USER
+
+    try:
+        response = await client.post(f"/api/v1/checkins/{uuid4()}/bookmark")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+
+async def test_unbookmark_checkin_returns_404_when_not_bookmarked(
+    client: AsyncClient, mocker: MockerFixture
+) -> None:
+    mocker.patch(
+        "app.api.v1.checkins.bookmark_service.unbookmark_checkin",
+        AsyncMock(side_effect=BookmarkNotFoundError("nope")),
+    )
+    app.dependency_overrides[get_current_user] = lambda: _USER
+
+    try:
+        response = await client.delete(f"/api/v1/checkins/{uuid4()}/bookmark")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+
 async def test_get_checkin_works_without_authentication(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     """The single-checkin GET is public — no dependency override needed."""
     _mock_get_products(mocker)
-    checkin = _checkin(is_public=True)
+    checkin = _checkin(visibility=Visibility.PUBLIC)
     mocker.patch(
         "app.api.v1.checkins.checkin_service.get_checkin",
         AsyncMock(return_value=checkin),
