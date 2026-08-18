@@ -22,21 +22,48 @@ async def get_current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> User:
-    """Resolve the authenticated request to a `User` row.
-
-    Verifies the Clerk session token, then looks up the corresponding
-    `User` by (auth_provider, auth_provider_id). The Clerk webhook (see
-    `app/api/v1/webhooks.py`) is the primary way `User` rows get created
-    and kept in sync — this only creates a minimal fallback row for the
-    rare race where a first request arrives before that webhook does.
+    """Resolve the authenticated request to a `User` row, for endpoints
+    that require a signed-in caller.
     """
     try:
-        auth_provider_id = await verify_session(request)
+        return await _resolve_user(request, session)
     except InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired session",
         ) from e
+
+
+async def get_optional_current_user(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> User | None:
+    """Same resolution as `get_current_user`, but returns `None` instead
+    of raising 401 when there's no (or an invalid) session token.
+
+    For endpoints that are public but behave differently for a known
+    viewer — e.g. a check-in listing that includes the viewer's own
+    private check-ins alongside everyone's public ones.
+    """
+    try:
+        return await _resolve_user(request, session)
+    except InvalidTokenError:
+        return None
+
+
+async def _resolve_user(request: Request, session: AsyncSession) -> User:
+    """Verify the Clerk session token, then look up the corresponding
+    `User` by (auth_provider, auth_provider_id).
+
+    The Clerk webhook (see `app/api/v1/webhooks.py`) is the primary way
+    `User` rows get created and kept in sync — this only creates a
+    minimal fallback row for the rare race where a first request arrives
+    before that webhook does.
+
+    Raises `InvalidTokenError` if the request isn't validly signed in —
+    callers decide how to react (401, or treat as anonymous).
+    """
+    auth_provider_id = await verify_session(request)
 
     user = await _find_user(session, auth_provider_id)
     if user is not None:
