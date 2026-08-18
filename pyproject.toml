@@ -7,6 +7,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "clerk-backend-api>=7.0.0",
     "fastapi>=0.141.1",
+    "fractional-indexing>=0.1.3",
     "geoalchemy2>=0.20.0",
     "pydantic-settings>=2.15.0",
     "redis>=8.1.0",
@@ -62,6 +63,11 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["app"]
+# SQLAlchemy's async engine bridges sync DBAPI calls into the event loop
+# via greenlet_spawn — without this, coverage.py's tracer loses exception
+# propagation across that boundary (e.g. a service raising inside an
+# integration test), undercounting otherwise-executed except branches.
+concurrency = ["greenlet"]
 
 [tool.coverage.report]
 fail_under = 98
