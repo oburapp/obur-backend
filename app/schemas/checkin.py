@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.ratings import MAX_RATING, MIN_RATING
+from app.core.visibility import Visibility, VisibilityValue
 from app.models.checkin import Checkin
 from app.models.checkin_product import CheckinProduct
 
@@ -34,7 +35,7 @@ class CheckinCreateRequest(BaseModel):
     rating_value: int | None = Field(default=None, ge=MIN_RATING, le=MAX_RATING)
     note: str | None = Field(default=None, max_length=_MAX_NOTE_LENGTH)
     photo_url: str | None = None
-    is_public: bool = True
+    visibility: VisibilityValue = Visibility.PUBLIC
     visited_at: date
     visited_tz: str
 
@@ -51,7 +52,7 @@ class CheckinUpdateRequest(BaseModel):
     rating_value: int | None = Field(default=None, ge=MIN_RATING, le=MAX_RATING)
     note: str | None = Field(default=None, max_length=_MAX_NOTE_LENGTH)
     photo_url: str | None = None
-    is_public: bool | None = None
+    visibility: VisibilityValue | None = None
     visited_at: date | None = None
 
 
@@ -85,7 +86,7 @@ class CheckinResponse(BaseModel):
     rating_value: int | None
     note: str | None
     photo_url: str | None
-    is_public: bool
+    visibility: str
     visited_at: date
     visited_tz: str
     created_at: datetime
@@ -104,7 +105,7 @@ class CheckinResponse(BaseModel):
             rating_value=checkin.rating_value,
             note=checkin.note,
             photo_url=checkin.photo_url,
-            is_public=checkin.is_public,
+            visibility=checkin.visibility,
             visited_at=checkin.visited_at,
             visited_tz=checkin.visited_tz,
             created_at=checkin.created_at,

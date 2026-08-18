@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
     EmptyProductListError,
@@ -24,6 +25,8 @@ from app.models.user import User, UserRole
 from app.models.venue import Venue
 from app.seeds.identity import global_product_type_id, venue_category_id
 from app.services import checkin as checkin_service
+from app.services import close_friend as close_friend_service
+from app.services import follow as follow_service
 from app.services.checkin import ProductRating
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe")
@@ -197,7 +200,7 @@ async def test_get_checkin_hides_private_checkin_from_other_users(
         products=[ProductRating(product_id=product.id, rating=4)],
         visited_at=date.today(),
         visited_tz=_TZ,
-        is_public=False,
+        visibility=Visibility.PRIVATE,
     )
 
     with pytest.raises(CheckinNotFoundError):
@@ -221,11 +224,44 @@ async def test_get_checkin_reveals_private_checkin_to_admin(
         products=[ProductRating(product_id=product.id, rating=4)],
         visited_at=date.today(),
         visited_tz=_TZ,
-        is_public=False,
+        visibility=Visibility.PRIVATE,
     )
 
     fetched = await checkin_service.get_checkin(db_session, checkin.id, viewer=admin)
     assert fetched.id == checkin.id
+
+
+async def test_get_checkin_reveals_close_friends_checkin_only_to_close_friends(
+    db_session: AsyncSession,
+) -> None:
+    owner = await _create_user(db_session)
+    close_friend_user = await _create_user(db_session)
+    stranger = await _create_user(db_session)
+    await follow_service.follow_user(
+        db_session, follower_id=close_friend_user.id, following_id=owner.id
+    )
+    await close_friend_service.add_close_friend(
+        db_session, user_id=owner.id, friend_id=close_friend_user.id
+    )
+    venue = await _create_venue(db_session, owner)
+    product = await _create_product(db_session, venue)
+    checkin = await checkin_service.create_checkin(
+        db_session,
+        user_id=owner.id,
+        venue_id=venue.id,
+        products=[ProductRating(product_id=product.id, rating=4)],
+        visited_at=date.today(),
+        visited_tz=_TZ,
+        visibility=Visibility.CLOSE_FRIENDS,
+    )
+
+    fetched = await checkin_service.get_checkin(
+        db_session, checkin.id, viewer=close_friend_user
+    )
+    assert fetched.id == checkin.id
+
+    with pytest.raises(CheckinNotFoundError):
+        await checkin_service.get_checkin(db_session, checkin.id, viewer=stranger)
 
 
 async def test_list_checkins_for_venue_filters_private_checkins(
@@ -242,7 +278,7 @@ async def test_list_checkins_for_venue_filters_private_checkins(
         products=[ProductRating(product_id=product.id, rating=4)],
         visited_at=date.today(),
         visited_tz=_TZ,
-        is_public=True,
+        visibility=Visibility.PUBLIC,
     )
     private_checkin = await checkin_service.create_checkin(
         db_session,
@@ -251,7 +287,7 @@ async def test_list_checkins_for_venue_filters_private_checkins(
         products=[ProductRating(product_id=product.id, rating=3)],
         visited_at=date.today(),
         visited_tz=_TZ,
-        is_public=False,
+        visibility=Visibility.PRIVATE,
     )
 
     as_stranger = await checkin_service.list_checkins_for_venue(
@@ -281,7 +317,7 @@ async def test_list_checkins_for_user_filters_private_checkins(
         products=[ProductRating(product_id=product.id, rating=4)],
         visited_at=date.today(),
         visited_tz=_TZ,
-        is_public=False,
+        visibility=Visibility.PRIVATE,
     )
 
     as_stranger = await checkin_service.list_checkins_for_user(
@@ -337,6 +373,34 @@ async def test_update_checkin_raises_for_non_owner(db_session: AsyncSession) -> 
             checkin.id,
             current_user=other_user,
             updates={"note": "başkası düzenlemeye çalıştı"},
+        )
+
+
+async def test_update_checkin_by_non_owner_on_a_private_checkin_returns_not_found(
+    db_session: AsyncSession,
+) -> None:
+    """Existence-leak fix: a stranger who can't even see a private
+    checkin must get the same `CheckinNotFoundError` a nonexistent id
+    would — never `NotCheckinOwnerError`, which would confirm the id
+    belongs to something real (see app.core.authz.ensure_visible_and_owned).
+    """
+    owner = await _create_user(db_session)
+    stranger = await _create_user(db_session)
+    venue = await _create_venue(db_session, owner)
+    product = await _create_product(db_session, venue)
+    checkin = await checkin_service.create_checkin(
+        db_session,
+        user_id=owner.id,
+        venue_id=venue.id,
+        products=[ProductRating(product_id=product.id, rating=4)],
+        visited_at=date.today(),
+        visited_tz=_TZ,
+        visibility=Visibility.PRIVATE,
+    )
+
+    with pytest.raises(CheckinNotFoundError):
+        await checkin_service.update_checkin(
+            db_session, checkin.id, current_user=stranger, updates={"note": "x"}
         )
 
 

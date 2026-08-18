@@ -121,7 +121,7 @@ async def test_private_checkin_is_hidden_from_other_users_over_http(
                 "products": [{"product_id": product_id, "rating": 4}],
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
-                "is_public": False,
+                "visibility": "private",
             },
         )
     finally:
