@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.pagination import DEFAULT_LIMIT, MAX_LIMIT
 from app.exceptions import (
@@ -14,7 +14,9 @@ from app.exceptions import (
     VenueNotFoundError,
 )
 from app.models.user import User
+from app.schemas.checkin import CheckinResponse
 from app.schemas.venue import NearbyVenueResponse, VenueCreateRequest, VenueResponse
+from app.services import checkin as checkin_service
 from app.services import venue as venue_service
 
 router = APIRouter(prefix="/venues", tags=["venues"])
@@ -61,12 +63,14 @@ async def create_venue(
 
 @router.get("")
 async def list_venues(
-    q: str | None = Query(default=None, description="Turkish full-text search query"),
+    q: str | None = Query(
+        default=None, description="Word-similarity venue name search query"
+    ),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> list[VenueResponse]:
-    """List venues, or full-text search by name when `q` is given."""
+    """List venues, or search by name when `q` is given."""
     if q is not None:
         venues = await venue_service.search_venues(
             session, q, limit=limit, offset=offset
@@ -91,3 +95,26 @@ async def get_venue(
         ) from e
 
     return VenueResponse.model_validate(venue)
+
+
+@router.get("/{venue_id}/checkins")
+async def list_venue_checkins(
+    venue_id: UUID,
+    viewer: User | None = Depends(get_optional_current_user),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> list[CheckinResponse]:
+    """List a venue's check-ins, newest first. Private check-ins only
+    appear for their own owner or an admin.
+    """
+    checkins = await checkin_service.list_checkins_for_venue(
+        session, venue_id, viewer=viewer, limit=limit, offset=offset
+    )
+    products_by_checkin = await checkin_service.get_products_for_checkins(
+        session, [checkin.id for checkin in checkins]
+    )
+    return [
+        CheckinResponse.from_models(checkin, products_by_checkin.get(checkin.id, []))
+        for checkin in checkins
+    ]

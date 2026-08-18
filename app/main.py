@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import products, users, venues, webhooks
+from app.api.v1 import admin, checkins, products, users, venues, webhooks
 from app.core.config import get_settings
 from app.core.database import check_database_connection, engine
 from app.core.redis import check_redis_connection, redis_client
@@ -43,6 +43,8 @@ app.add_middleware(
 app.include_router(users.router, prefix=_API_V1_PREFIX)
 app.include_router(venues.router, prefix=_API_V1_PREFIX)
 app.include_router(products.router, prefix=_API_V1_PREFIX)
+app.include_router(checkins.router, prefix=_API_V1_PREFIX)
+app.include_router(admin.router, prefix=_API_V1_PREFIX)
 app.include_router(webhooks.router, prefix=_API_V1_PREFIX)
 
 
