@@ -8,7 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, checkins, products, users, venues, webhooks
+from app.api.v1 import (
+    admin,
+    checkins,
+    close_friends,
+    follows,
+    lists,
+    notifications,
+    products,
+    users,
+    venue_saves,
+    venues,
+    webhooks,
+)
 from app.core.config import get_settings
 from app.core.database import check_database_connection, engine
 from app.core.redis import check_redis_connection, redis_client
@@ -44,6 +56,11 @@ app.include_router(users.router, prefix=_API_V1_PREFIX)
 app.include_router(venues.router, prefix=_API_V1_PREFIX)
 app.include_router(products.router, prefix=_API_V1_PREFIX)
 app.include_router(checkins.router, prefix=_API_V1_PREFIX)
+app.include_router(follows.router, prefix=_API_V1_PREFIX)
+app.include_router(close_friends.router, prefix=_API_V1_PREFIX)
+app.include_router(lists.router, prefix=_API_V1_PREFIX)
+app.include_router(venue_saves.router, prefix=_API_V1_PREFIX)
+app.include_router(notifications.router, prefix=_API_V1_PREFIX)
 app.include_router(admin.router, prefix=_API_V1_PREFIX)
 app.include_router(webhooks.router, prefix=_API_V1_PREFIX)
 
