@@ -16,7 +16,12 @@ _CAFE_CATEGORY_ID = venue_category_id("cafe")
 
 
 async def _create_user(db_session: AsyncSession) -> User:
-    user = User(auth_provider="clerk", auth_provider_id=f"user_{uuid4()}")
+    user = User(
+        auth_provider="clerk",
+        auth_provider_id=f"user_{uuid4()}",
+        username=f"u{uuid4().hex[:12]}",
+        display_name="Test User",
+    )
     db_session.add(user)
     await db_session.flush()
     return user

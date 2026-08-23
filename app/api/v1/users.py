@@ -2,21 +2,23 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.pagination import DEFAULT_LIMIT, MAX_LIMIT
+from app.exceptions import UsernameChangedTooRecentlyError, UsernameTakenError
 from app.models.user import User
 from app.models.venue_save import VenueSaveTypeValue
 from app.schemas.checkin import CheckinResponse
 from app.schemas.list import ListResponse
-from app.schemas.user import UserResponse
+from app.schemas.user import UserResponse, UserUpdateRequest
 from app.schemas.venue_save import VenueSaveResponse
 from app.services import bookmark as bookmark_service
 from app.services import checkin as checkin_service
 from app.services import list as list_service
+from app.services import user as user_service
 from app.services import venue_save as venue_save_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -26,6 +28,64 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the authenticated user's own profile."""
     return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me")
+async def update_me(
+    payload: UserUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    """Edit the authenticated user's own profile.
+
+    Only fields present in the request are changed. Changing `username` is
+    rate-limited and must not collide with another account's handle.
+    """
+    try:
+        updated = await user_service.update_profile(
+            session,
+            user=current_user,
+            changes=payload.model_dump(exclude_unset=True),
+        )
+    except UsernameTakenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username already taken"
+        ) from e
+    except UsernameChangedTooRecentlyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)
+        ) from e
+
+    return UserResponse.model_validate(updated)
+
+
+@router.post("/me/freeze")
+async def freeze_me(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    """Freeze the authenticated user's own account.
+
+    Reversible with no admin involvement: signing back in reactivates it
+    (see app.core.auth). Distinct from admin suspension, which this can
+    never produce and a user can never undo.
+    """
+    frozen = await user_service.freeze_account(session, user=current_user)
+    return UserResponse.model_validate(frozen)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Permanently delete the authenticated user's own account.
+
+    Irreversible, and not the same as freezing: every check-in, list, and
+    saved venue goes with it. Venues the account added survive without
+    attribution — they are shared resources, not personal content.
+    """
+    await user_service.delete_account(session, user_id=current_user.id)
 
 
 @router.get("/{user_id}/checkins")
@@ -42,13 +102,7 @@ async def list_user_checkins(
     checkins = await checkin_service.list_checkins_for_user(
         session, user_id, viewer=viewer, limit=limit, offset=offset
     )
-    products_by_checkin = await checkin_service.get_products_for_checkins(
-        session, [checkin.id for checkin in checkins]
-    )
-    return [
-        CheckinResponse.from_models(checkin, products_by_checkin.get(checkin.id, []))
-        for checkin in checkins
-    ]
+    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
 
 
 @router.get("/{user_id}/lists")
@@ -100,13 +154,7 @@ async def list_my_bookmarked_checkins(
     checkins = await bookmark_service.list_bookmarked_checkins(
         session, current_user.id, limit=limit, offset=offset
     )
-    products_by_checkin = await checkin_service.get_products_for_checkins(
-        session, [checkin.id for checkin in checkins]
-    )
-    return [
-        CheckinResponse.from_models(checkin, products_by_checkin.get(checkin.id, []))
-        for checkin in checkins
-    ]
+    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
 
 
 @router.get("/me/bookmarks/lists")

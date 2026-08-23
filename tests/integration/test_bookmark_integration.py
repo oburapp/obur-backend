@@ -18,22 +18,24 @@ from app.exceptions import (
     ListNotFoundError,
 )
 from app.models.list_bookmark import ListBookmark
-from app.models.product import Product
 from app.models.user import User
 from app.models.venue import Venue
-from app.seeds.identity import global_product_type_id, venue_category_id
+from app.seeds.identity import venue_category_id
 from app.services import bookmark as bookmark_service
 from app.services import checkin as checkin_service
 from app.services import list as list_service
-from app.services.checkin import ProductRating
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe")
-_FILTER_COFFEE_TYPE_ID = global_product_type_id("filter-coffee")
 _TZ = "Europe/Istanbul"
 
 
 async def _create_user(session: AsyncSession) -> User:
-    user = User(auth_provider="clerk", auth_provider_id=f"user_{uuid4()}")
+    user = User(
+        auth_provider="clerk",
+        auth_provider_id=f"user_{uuid4()}",
+        username=f"u{uuid4().hex[:12]}",
+        display_name="Test User",
+    )
     session.add(user)
     await session.flush()
     return user
@@ -51,16 +53,14 @@ async def _create_checkin(
     )
     session.add(venue)
     await session.flush()
-    product = Product(
-        venue_id=venue.id, global_type_id=_FILTER_COFFEE_TYPE_ID, name="Filtre"
-    )
-    session.add(product)
-    await session.flush()
     return await checkin_service.create_checkin(
         session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=visibility,

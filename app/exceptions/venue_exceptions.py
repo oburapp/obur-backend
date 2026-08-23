@@ -1,4 +1,4 @@
-"""Custom exceptions for the venue and product domain."""
+"""Custom exceptions for the venue domain."""
 
 import uuid
 
@@ -26,18 +26,6 @@ class DuplicateVenueNearbyError(VenueError):
 
 class VenueCategoryNotFoundError(VenueError):
     """Raised when a venue references a category id that doesn't exist."""
-
-
-class ProductError(Exception):
-    """Base class for product-domain errors."""
-
-
-class ProductNotFoundError(ProductError):
-    """Raised when a product id doesn't match any row."""
-
-
-class GlobalProductTypeNotFoundError(ProductError):
-    """Raised when a product references a global product type that doesn't exist."""
 
 
 class VenueSaveNotFoundError(VenueError):

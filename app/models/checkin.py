@@ -1,6 +1,12 @@
-"""CHECKIN model — a user's visit to a venue: optional venue-level
-ratings, a note, a photo, and the products logged during the visit (see
-CheckinProduct in app/models/checkin_product.py).
+"""CHECKIN model — a user's visit to a venue: its four venue-level
+ratings, a note, and a photo.
+
+The four criteria (taste, service, ambiance, value) are all required, so
+every check-in contributes exactly the same four data points to the
+venue's aggregate and weighs the same as every other. `rating_taste` is
+the only field measuring the food itself, and `rating_value` is the only
+one measuring price — the others say nothing about what a visit cost.
+See ADR-0011 in obur-docs.
 
 `visibility` (see app.core.visibility.Visibility) is the only
 visibility control — see the PDD's Check-in Flow section and ADR-0006
@@ -36,6 +42,16 @@ from app.core.ratings import MAX_RATING, MIN_RATING
 from app.core.visibility import Visibility
 from app.models.base import Base
 
+# The four venue-level criteria, in the order the check-in flow presents
+# them (see the PDD's Check-in Flow, Step 2). Named here once so the
+# range constraint below can't drift out of sync with the columns.
+_RATING_COLUMNS = (
+    "rating_taste",
+    "rating_service",
+    "rating_ambiance",
+    "rating_value",
+)
+
 _DEFAULT_VISIBILITY = Visibility.PUBLIC
 _ALLOWED_VISIBILITIES = (
     Visibility.PUBLIC,
@@ -51,10 +67,10 @@ class Checkin(Base):
     __table_args__ = (
         *(
             CheckConstraint(
-                f"{column} IS NULL OR {column} BETWEEN {MIN_RATING} AND {MAX_RATING}",
+                f"{column} BETWEEN {MIN_RATING} AND {MAX_RATING}",
                 name=f"ck_checkins_{column}_range",
             )
-            for column in ("rating_service", "rating_ambiance", "rating_value")
+            for column in _RATING_COLUMNS
         ),
         CheckConstraint(
             "visibility IN ("
@@ -68,16 +84,26 @@ class Checkin(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     venue_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("venues.id"), nullable=False, index=True
     )
-    rating_service: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rating_ambiance: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rating_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Food and drink quality.
+    rating_taste: Mapped[int] = mapped_column(Integer, nullable=False)
+    rating_service: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Atmosphere: music, lighting, decor.
+    rating_ambiance: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Value for money — is it worth what it costs. Deliberately a price
+    # judgement and nothing else: an earlier definition ("the payoff of
+    # the overall experience") overlapped the other three once each was
+    # rated separately, leaving nothing it alone could express.
+    rating_value: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Plain URL, no upload mechanism yet — R2 upload lands in Phase 7
+    # Plain URL, no upload mechanism yet — R2 upload lands in Phase 15
     # (docs/roadmap.md). Same "field exists, integration deferred"
     # pattern as Venue.google_places_id (see ADR-0002 in obur-docs).
     photo_url: Mapped[str | None] = mapped_column(String, nullable=True)

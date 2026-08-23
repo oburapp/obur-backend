@@ -11,26 +11,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
 from app.main import app
-from app.models.product import Product
 from app.models.user import User
 from app.models.venue import Venue
-from app.seeds.identity import global_product_type_id, venue_category_id
+from app.seeds.identity import venue_category_id
 from tests.integration.conftest import QueryCounter
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe")
-_FILTER_COFFEE_TYPE_ID = global_product_type_id("filter-coffee")
 
 
 async def _create_user(session: AsyncSession) -> User:
-    user = User(auth_provider="clerk", auth_provider_id=f"user_{uuid4()}")
+    user = User(
+        auth_provider="clerk",
+        auth_provider_id=f"user_{uuid4()}",
+        username=f"u{uuid4().hex[:12]}",
+        display_name="Test User",
+    )
     session.add(user)
     await session.flush()
     return user
 
 
-async def _create_venue_with_product(
-    session: AsyncSession, owner: User
-) -> tuple[Venue, str]:
+async def _create_venue(session: AsyncSession, owner: User) -> Venue:
     venue = Venue(
         name="Kadıköy Kahve Durağı",
         lat=40.9905,
@@ -40,23 +41,14 @@ async def _create_venue_with_product(
     )
     session.add(venue)
     await session.flush()
-
-    product = Product(
-        venue_id=venue.id,
-        global_type_id=_FILTER_COFFEE_TYPE_ID,
-        name="Filtre Kahve",
-        is_available=True,
-    )
-    session.add(product)
-    await session.flush()
-    return venue, str(product.id)
+    return venue
 
 
 async def test_create_checkin_then_fetch_it_by_id(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, user)
+    venue = await _create_venue(db_session, user)
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
@@ -64,7 +56,10 @@ async def test_create_checkin_then_fetch_it_by_id(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
                 "note": "harika",
@@ -79,14 +74,14 @@ async def test_create_checkin_then_fetch_it_by_id(
     get_response = await client_with_db_session.get(f"/api/v1/checkins/{checkin_id}")
     assert get_response.status_code == 200
     assert get_response.json()["note"] == "harika"
-    assert get_response.json()["products"][0]["rating"] == 4
+    assert get_response.json()["rating_taste"] == 4
 
 
 async def test_create_checkin_returns_422_for_future_visit_date(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, user)
+    venue = await _create_venue(db_session, user)
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
@@ -94,7 +89,10 @@ async def test_create_checkin_returns_422_for_future_visit_date(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": "2999-01-01",
                 "visited_tz": "Europe/Istanbul",
             },
@@ -110,7 +108,7 @@ async def test_private_checkin_is_hidden_from_other_users_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
     app.dependency_overrides[get_current_user] = lambda: owner
 
     try:
@@ -118,7 +116,10 @@ async def test_private_checkin_is_hidden_from_other_users_over_http(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
                 "visibility": "private",
@@ -159,7 +160,7 @@ async def test_owner_can_soft_delete_but_not_hard_delete_via_regular_endpoint(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
     app.dependency_overrides[get_current_user] = lambda: owner
 
     try:
@@ -167,7 +168,10 @@ async def test_owner_can_soft_delete_but_not_hard_delete_via_regular_endpoint(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
             },
@@ -190,7 +194,7 @@ async def test_regular_user_cannot_purge_a_checkin(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
     app.dependency_overrides[get_current_user] = lambda: owner
 
     try:
@@ -198,7 +202,10 @@ async def test_regular_user_cannot_purge_a_checkin(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
             },
@@ -224,7 +231,7 @@ async def test_listing_venue_checkins_does_not_scale_query_count_with_result_siz
     of how many check-ins the venue has.
     """
     owner = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
     app.dependency_overrides[get_current_user] = lambda: owner
 
     async def _create_checkin() -> None:
@@ -232,7 +239,10 @@ async def test_listing_venue_checkins_does_not_scale_query_count_with_result_siz
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
             },

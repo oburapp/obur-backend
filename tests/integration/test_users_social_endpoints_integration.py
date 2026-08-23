@@ -13,26 +13,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.main import app
-from app.models.product import Product
 from app.models.user import User
 from app.models.venue import Venue
-from app.seeds.identity import global_product_type_id, venue_category_id
+from app.seeds.identity import venue_category_id
 from tests.integration.conftest import QueryCounter
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe")
-_FILTER_COFFEE_TYPE_ID = global_product_type_id("filter-coffee")
 
 
 async def _create_user(session: AsyncSession) -> User:
-    user = User(auth_provider="clerk", auth_provider_id=f"user_{uuid4()}")
+    user = User(
+        auth_provider="clerk",
+        auth_provider_id=f"user_{uuid4()}",
+        username=f"u{uuid4().hex[:12]}",
+        display_name="Test User",
+    )
     session.add(user)
     await session.flush()
     return user
 
 
-async def _create_venue_with_product(
-    session: AsyncSession, owner: User
-) -> tuple[Venue, str]:
+async def _create_venue(session: AsyncSession, owner: User) -> Venue:
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -42,15 +43,7 @@ async def _create_venue_with_product(
     )
     session.add(venue)
     await session.flush()
-    product = Product(
-        venue_id=venue.id,
-        global_type_id=_FILTER_COFFEE_TYPE_ID,
-        name="Filtre",
-        is_available=True,
-    )
-    session.add(product)
-    await session.flush()
-    return venue, str(product.id)
+    return venue
 
 
 async def test_list_user_lists_over_http(
@@ -73,7 +66,7 @@ async def test_list_user_venue_saves_filters_by_type_over_http(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await _create_user(db_session)
-    venue, _ = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
     app.dependency_overrides[get_current_user] = lambda: owner
     try:
         await client_with_db_session.post(
@@ -132,14 +125,17 @@ async def test_list_my_bookmarked_checkins_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     bookmarker = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
     app.dependency_overrides[get_current_user] = lambda: owner
     try:
         create_response = await client_with_db_session.post(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
             },
@@ -159,7 +155,7 @@ async def test_list_my_bookmarked_checkins_over_http(
 
     assert response.status_code == 200
     assert response.json()[0]["id"] == checkin_id
-    assert response.json()[0]["products"][0]["rating"] == 4
+    assert response.json()[0]["rating_taste"] == 4
 
 
 async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
@@ -173,7 +169,7 @@ async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
     """
     owner = await _create_user(db_session)
     bookmarker = await _create_user(db_session)
-    venue, product_id = await _create_venue_with_product(db_session, owner)
+    venue = await _create_venue(db_session, owner)
 
     async def _create_and_bookmark_checkin() -> None:
         app.dependency_overrides[get_current_user] = lambda: owner
@@ -181,7 +177,10 @@ async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
             "/api/v1/checkins",
             json={
                 "venue_id": str(venue.id),
-                "products": [{"product_id": product_id, "rating": 4}],
+                "rating_taste": 4,
+                "rating_service": 3,
+                "rating_ambiance": 3,
+                "rating_value": 2,
                 "visited_at": date.today().isoformat(),
                 "visited_tz": "Europe/Istanbul",
             },

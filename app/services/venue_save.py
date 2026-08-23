@@ -29,8 +29,7 @@ from app.models.venue import Venue
 from app.models.venue_save import VenueSave
 
 # Fields a venue save's owner (or an admin) may change after creation.
-# `type` and `venue_id` don't change — delete and re-save instead, same
-# reasoning as CHECKIN's immutable product set.
+# `type` and `venue_id` don't change — delete and re-save instead.
 _EDITABLE_FIELDS = frozenset({"visibility"})
 
 

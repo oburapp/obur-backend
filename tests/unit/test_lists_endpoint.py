@@ -188,7 +188,7 @@ async def test_list_items_returns_200(
         "app.api.v1.lists.list_service.get_list", AsyncMock(return_value=_list_row())
     )
     mocker.patch(
-        "app.api.v1.lists.list_service.list_items_for_list",
+        "app.api.v1.lists.list_item_service.list_items_for_list",
         AsyncMock(return_value=[_list_item_row()]),
     )
 
@@ -202,7 +202,7 @@ async def test_add_list_item_returns_201(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.add_list_item",
+        "app.api.v1.lists.list_item_service.add_list_item",
         AsyncMock(return_value=_list_item_row()),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -221,7 +221,7 @@ async def test_add_list_item_returns_404_when_list_not_found(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.add_list_item",
+        "app.api.v1.lists.list_item_service.add_list_item",
         AsyncMock(side_effect=ListNotFoundError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -240,7 +240,7 @@ async def test_add_list_item_returns_403_when_not_owner(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.add_list_item",
+        "app.api.v1.lists.list_item_service.add_list_item",
         AsyncMock(side_effect=NotListOwnerError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -259,7 +259,7 @@ async def test_add_list_item_returns_422_on_duplicate(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.add_list_item",
+        "app.api.v1.lists.list_item_service.add_list_item",
         AsyncMock(side_effect=DuplicateListItemError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -278,7 +278,7 @@ async def test_move_list_item_returns_200(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.move_list_item",
+        "app.api.v1.lists.list_item_service.move_list_item",
         AsyncMock(return_value=_list_item_row()),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -298,7 +298,7 @@ async def test_move_list_item_returns_404_when_item_not_found(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.move_list_item",
+        "app.api.v1.lists.list_item_service.move_list_item",
         AsyncMock(side_effect=ListItemNotFoundError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -318,7 +318,7 @@ async def test_move_list_item_returns_403_when_not_owner(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.move_list_item",
+        "app.api.v1.lists.list_item_service.move_list_item",
         AsyncMock(side_effect=NotListOwnerError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -338,7 +338,8 @@ async def test_remove_list_item_returns_204(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.remove_list_item", AsyncMock(return_value=None)
+        "app.api.v1.lists.list_item_service.remove_list_item",
+        AsyncMock(return_value=None),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
 
@@ -354,7 +355,7 @@ async def test_remove_list_item_returns_404_when_not_found(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.remove_list_item",
+        "app.api.v1.lists.list_item_service.remove_list_item",
         AsyncMock(side_effect=ListItemNotFoundError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER
@@ -371,7 +372,7 @@ async def test_remove_list_item_returns_403_when_not_owner(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "app.api.v1.lists.list_service.remove_list_item",
+        "app.api.v1.lists.list_item_service.remove_list_item",
         AsyncMock(side_effect=NotListOwnerError("nope")),
     )
     app.dependency_overrides[get_current_user] = lambda: _USER

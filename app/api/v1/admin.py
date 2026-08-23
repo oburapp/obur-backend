@@ -24,7 +24,7 @@ async def purge_checkin(
     _admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """Permanently delete a check-in and its product ratings.
+    """Permanently delete a check-in.
 
     Unlike `DELETE /api/v1/checkins/{id}` (always a soft-delete), this
     actually removes the row — for moderation/takedown cases, not a

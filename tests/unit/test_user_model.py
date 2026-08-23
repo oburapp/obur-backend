@@ -22,17 +22,29 @@ def test_user_required_fields_are_not_nullable() -> None:
         "id",
         "auth_provider",
         "auth_provider_id",
+        "display_name",
+        "username",
         "locale",
         "role",
+        "status",
         "created_at",
     ]:
         assert columns[name].nullable is False, name
 
 
+def test_user_username_is_unique_but_display_name_is_not() -> None:
+    """The handle is what search, mentions, and profile URLs key off of, so
+    it must be unique; a display name is free text two people may share —
+    see ADR-0011 and the PDD's §7 account decisions.
+    """
+    columns = User.__table__.columns
+    assert columns["username"].unique is True
+    assert columns["display_name"].unique is not True
+
+
 def test_user_optional_profile_fields_are_nullable() -> None:
     columns = User.__table__.columns
     for name in [
-        "username",
         "email",
         "bio",
         "avatar_url",

@@ -171,6 +171,22 @@ except:
   - Unapplied migration files may be edited (autogenerate is imperfect)
   - Already-applied migrations must never be modified — write a new migration instead
   - Before modifying an applied migration, explain why and get approval first
+  - **A migration never imports from `app/`** — it carries its own literal
+    values and its own `sa.table()`/`sa.column()` definitions. `app/` is
+    current state and changes with every refactor; a migration is frozen
+    history, so importing one into the other breaks the moment they diverge
+    (it already did once — see ADR-0012 in obur-docs). Enforced by
+    `tests/unit/test_migration_isolation.py`. `migrations/env.py` is the one
+    exception: it is Alembic's config, not a migration, and autogenerate
+    needs live `Base.metadata`.
+  - **Reference/catalog data belongs to the seeder, not a migration.** It
+    describes what the catalog should contain now and is expected to grow, so
+    it lives in `app/seeds/` and is applied by `app/seeds/runner.py`
+    (idempotent upsert). Schema goes in a migration; a one-off data fix goes
+    in a migration; a growing catalog does not. Run both together — `just
+    setup-db` — since a migrated-but-unseeded database has no venue
+    categories and `VENUE.category_id` is `NOT NULL`. The seeder is never
+    invoked from application startup (it would race across instances).
 
 ---
 

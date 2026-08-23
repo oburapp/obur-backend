@@ -15,7 +15,6 @@ from app.api.v1 import (
     follows,
     lists,
     notifications,
-    products,
     users,
     venue_saves,
     venues,
@@ -54,7 +53,6 @@ app.add_middleware(
 
 app.include_router(users.router, prefix=_API_V1_PREFIX)
 app.include_router(venues.router, prefix=_API_V1_PREFIX)
-app.include_router(products.router, prefix=_API_V1_PREFIX)
 app.include_router(checkins.router, prefix=_API_V1_PREFIX)
 app.include_router(follows.router, prefix=_API_V1_PREFIX)
 app.include_router(close_friends.router, prefix=_API_V1_PREFIX)

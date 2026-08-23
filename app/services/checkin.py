@@ -1,10 +1,8 @@
-"""Checkin domain: create-with-products in one transaction,
-privacy-aware lookup/listing, and soft/hard delete.
+"""Checkin domain: creation, privacy-aware lookup/listing, and
+soft/hard delete.
 """
 
 import uuid
-from collections import defaultdict
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
@@ -12,6 +10,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import (
+    account_is_visible,
     can_view,
     close_friend_of_owner_exists,
     ensure_visible_and_owned,
@@ -20,24 +19,19 @@ from app.core.authz import (
 from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
-    DuplicateProductRatingError,
-    EmptyProductListError,
     FutureVisitDateError,
     NotCheckinOwnerError,
-    ProductNotAtVenueError,
     VenueNotFoundError,
 )
 from app.models.checkin import Checkin
-from app.models.checkin_product import CheckinProduct
-from app.models.product import Product
 from app.models.user import User, UserRole
 from app.models.venue import Venue
 
-# Fields a check-in's owner (or an admin) may change after creation.
-# The product list itself isn't editable here — see docs/roadmap.md
-# Phase 3 scope notes.
+# Fields a check-in's owner (or an admin) may change after creation —
+# see ADR-0011 in obur-docs.
 _EDITABLE_FIELDS = frozenset(
     {
+        "rating_taste",
         "rating_service",
         "rating_ambiance",
         "rating_value",
@@ -47,14 +41,6 @@ _EDITABLE_FIELDS = frozenset(
         "visited_at",
     }
 )
-
-
-@dataclass(frozen=True)
-class ProductRating:
-    """One product's rating within a check-in being created."""
-
-    product_id: uuid.UUID
-    rating: int
 
 
 def _ensure_visited_at_not_future(visited_at: date, visited_tz: str) -> None:
@@ -77,60 +63,31 @@ async def create_checkin(
     *,
     user_id: uuid.UUID,
     venue_id: uuid.UUID,
-    products: list[ProductRating],
     visited_at: date,
     visited_tz: str,
-    rating_service: int | None = None,
-    rating_ambiance: int | None = None,
-    rating_value: int | None = None,
+    rating_taste: int,
+    rating_service: int,
+    rating_ambiance: int,
+    rating_value: int,
     note: str | None = None,
     photo_url: str | None = None,
     visibility: str = Visibility.PUBLIC,
 ) -> Checkin:
-    """Create a check-in and its product ratings in one transaction.
+    """Create a check-in.
 
     Raises `VenueNotFoundError` if `venue_id` doesn't exist.
-    Raises `EmptyProductListError` if `products` is empty.
-    Raises `DuplicateProductRatingError` if a product appears twice.
-    Raises `ProductNotAtVenueError` if a product isn't currently
-    available at this venue.
     Raises `FutureVisitDateError` if `visited_at` is in the future for
     the visitor.
     """
     if await session.get(Venue, venue_id) is None:
         raise VenueNotFoundError(f"venue not found: {venue_id}")
 
-    if not products:
-        raise EmptyProductListError("a check-in must rate at least one product")
-
-    product_ids = [product.product_id for product in products]
-    if len(product_ids) != len(set(product_ids)):
-        raise DuplicateProductRatingError(
-            "the same product cannot be rated twice in one check-in"
-        )
-
     _ensure_visited_at_not_future(visited_at, visited_tz)
-
-    # Excludes products the venue has since stopped offering
-    # (Product.is_available=False) — those stay visible on past
-    # check-ins but can't be selected for a new one.
-    result = await session.execute(
-        select(Product.id).where(
-            Product.id.in_(product_ids),
-            Product.venue_id == venue_id,
-            Product.is_available.is_(True),
-        )
-    )
-    available_product_ids = set(result.scalars().all())
-    unavailable = set(product_ids) - available_product_ids
-    if unavailable:
-        raise ProductNotAtVenueError(
-            f"products not currently available at venue {venue_id}: {unavailable}"
-        )
 
     checkin = Checkin(
         user_id=user_id,
         venue_id=venue_id,
+        rating_taste=rating_taste,
         rating_service=rating_service,
         rating_ambiance=rating_ambiance,
         rating_value=rating_value,
@@ -141,17 +98,6 @@ async def create_checkin(
         visited_tz=visited_tz,
     )
     session.add(checkin)
-    await session.flush()  # assigns checkin.id before the children need it
-
-    for product in products:
-        session.add(
-            CheckinProduct(
-                checkin_id=checkin.id,
-                product_id=product.product_id,
-                rating=product.rating,
-            )
-        )
-
     await session.commit()
     await session.refresh(checkin)
     return checkin
@@ -178,28 +124,6 @@ async def get_checkin(
     return checkin
 
 
-async def get_products_for_checkins(
-    session: AsyncSession, checkin_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, list[CheckinProduct]]:
-    """Return each check-in's rated products, grouped by `checkin_id`.
-
-    One batched query (`checkin_id IN (...)`) regardless of how many
-    `checkin_ids` are passed — callers building a list response must use
-    this instead of querying per check-in in a loop, which would be N+1
-    (see docs/testing-strategy.md).
-    """
-    if not checkin_ids:
-        return {}
-
-    result = await session.execute(
-        select(CheckinProduct).where(CheckinProduct.checkin_id.in_(checkin_ids))
-    )
-    grouped: dict[uuid.UUID, list[CheckinProduct]] = defaultdict(list)
-    for checkin_product in result.scalars().all():
-        grouped[checkin_product.checkin_id].append(checkin_product)
-    return grouped
-
-
 async def list_checkins_for_venue(
     session: AsyncSession,
     venue_id: uuid.UUID,
@@ -212,7 +136,11 @@ async def list_checkins_for_venue(
     is allowed to see (see app.core.authz.can_view) — an admin sees
     everything.
     """
-    conditions = [Checkin.venue_id == venue_id, Checkin.deleted_at.is_(None)]
+    conditions = [
+        Checkin.venue_id == venue_id,
+        Checkin.deleted_at.is_(None),
+        account_is_visible(Checkin.user_id),
+    ]
     if viewer is None:
         conditions.append(Checkin.visibility == Visibility.PUBLIC)
     elif viewer.role != UserRole.ADMIN:
@@ -248,7 +176,11 @@ async def list_checkins_for_user(
     is allowed to see (see app.core.authz.can_view) — an admin sees
     everything.
     """
-    conditions = [Checkin.user_id == target_user_id, Checkin.deleted_at.is_(None)]
+    conditions = [
+        Checkin.user_id == target_user_id,
+        Checkin.deleted_at.is_(None),
+        account_is_visible(Checkin.user_id),
+    ]
     if viewer is None:
         conditions.append(Checkin.visibility == Visibility.PUBLIC)
     elif not is_owner_or_admin(target_user_id, viewer):
@@ -342,8 +274,7 @@ async def soft_delete_checkin(
 
 
 async def hard_delete_checkin(session: AsyncSession, checkin_id: uuid.UUID) -> None:
-    """Permanently delete a check-in and its product ratings (cascades
-    via `checkin_products`' `ON DELETE CASCADE`).
+    """Permanently delete a check-in.
 
     Admin-only — enforced by the endpoint's `require_admin` dependency,
     not re-checked here. Works on an already soft-deleted check-in too,

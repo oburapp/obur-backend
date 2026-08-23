@@ -13,31 +13,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
-    EmptyProductListError,
     FutureVisitDateError,
     NotCheckinOwnerError,
-    ProductNotAtVenueError,
     VenueNotFoundError,
 )
-from app.models.checkin_product import CheckinProduct
-from app.models.product import Product
+from app.models.checkin import Checkin
 from app.models.user import User, UserRole
 from app.models.venue import Venue
-from app.seeds.identity import global_product_type_id, venue_category_id
+from app.seeds.identity import venue_category_id
 from app.services import checkin as checkin_service
 from app.services import close_friend as close_friend_service
 from app.services import follow as follow_service
-from app.services.checkin import ProductRating
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe")
-_FILTER_COFFEE_TYPE_ID = global_product_type_id("filter-coffee")
 _LAT = 40.9905
 _LNG = 29.0234
 _TZ = "Europe/Istanbul"
 
 
 async def _create_user(session: AsyncSession, *, role: str = UserRole.USER) -> User:
-    user = User(auth_provider="clerk", auth_provider_id=f"user_{uuid4()}", role=role)
+    user = User(
+        auth_provider="clerk",
+        auth_provider_id=f"user_{uuid4()}",
+        username=f"u{uuid4().hex[:12]}",
+        display_name="Test User",
+        role=role,
+    )
     session.add(user)
     await session.flush()
     return user
@@ -56,32 +57,20 @@ async def _create_venue(session: AsyncSession, added_by: User) -> Venue:
     return venue
 
 
-async def _create_product(
-    session: AsyncSession, venue: Venue, *, is_available: bool = True
-) -> Product:
-    product = Product(
-        venue_id=venue.id,
-        global_type_id=_FILTER_COFFEE_TYPE_ID,
-        name="Filtre Kahve",
-        is_available=is_available,
-    )
-    session.add(product)
-    await session.flush()
-    return product
-
-
 async def test_create_checkin_persists_and_is_retrievable(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
-    product = await _create_product(db_session, venue)
 
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=user.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         note="harika bir yer",
@@ -89,13 +78,10 @@ async def test_create_checkin_persists_and_is_retrievable(
 
     fetched = await checkin_service.get_checkin(db_session, checkin.id, viewer=user)
     assert fetched.note == "harika bir yer"
-
-    result = await db_session.execute(
-        select(CheckinProduct).where(CheckinProduct.checkin_id == checkin.id)
-    )
-    products = result.scalars().all()
-    assert len(products) == 1
-    assert products[0].rating == 4
+    assert fetched.rating_taste == 4
+    assert fetched.rating_service == 3
+    assert fetched.rating_ambiance == 3
+    assert fetched.rating_value == 2
 
 
 async def test_create_checkin_raises_when_venue_does_not_exist(
@@ -108,61 +94,10 @@ async def test_create_checkin_raises_when_venue_does_not_exist(
             db_session,
             user_id=user.id,
             venue_id=uuid4(),
-            products=[ProductRating(product_id=uuid4(), rating=4)],
-            visited_at=date.today(),
-            visited_tz=_TZ,
-        )
-
-
-async def test_create_checkin_raises_with_no_products(
-    db_session: AsyncSession,
-) -> None:
-    user = await _create_user(db_session)
-    venue = await _create_venue(db_session, user)
-
-    with pytest.raises(EmptyProductListError):
-        await checkin_service.create_checkin(
-            db_session,
-            user_id=user.id,
-            venue_id=venue.id,
-            products=[],
-            visited_at=date.today(),
-            visited_tz=_TZ,
-        )
-
-
-async def test_create_checkin_raises_when_product_belongs_to_another_venue(
-    db_session: AsyncSession,
-) -> None:
-    user = await _create_user(db_session)
-    venue = await _create_venue(db_session, user)
-    other_venue = await _create_venue(db_session, user)
-    product_elsewhere = await _create_product(db_session, other_venue)
-
-    with pytest.raises(ProductNotAtVenueError):
-        await checkin_service.create_checkin(
-            db_session,
-            user_id=user.id,
-            venue_id=venue.id,
-            products=[ProductRating(product_id=product_elsewhere.id, rating=4)],
-            visited_at=date.today(),
-            visited_tz=_TZ,
-        )
-
-
-async def test_create_checkin_raises_when_product_is_no_longer_available(
-    db_session: AsyncSession,
-) -> None:
-    user = await _create_user(db_session)
-    venue = await _create_venue(db_session, user)
-    product = await _create_product(db_session, venue, is_available=False)
-
-    with pytest.raises(ProductNotAtVenueError):
-        await checkin_service.create_checkin(
-            db_session,
-            user_id=user.id,
-            venue_id=venue.id,
-            products=[ProductRating(product_id=product.id, rating=4)],
+            rating_taste=4,
+            rating_service=3,
+            rating_ambiance=3,
+            rating_value=2,
             visited_at=date.today(),
             visited_tz=_TZ,
         )
@@ -173,14 +108,16 @@ async def test_create_checkin_raises_on_future_visit_date(
 ) -> None:
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
-    product = await _create_product(db_session, venue)
 
     with pytest.raises(FutureVisitDateError):
         await checkin_service.create_checkin(
             db_session,
             user_id=user.id,
             venue_id=venue.id,
-            products=[ProductRating(product_id=product.id, rating=4)],
+            rating_taste=4,
+            rating_service=3,
+            rating_ambiance=3,
+            rating_value=2,
             visited_at=date.today() + timedelta(days=1),
             visited_tz=_TZ,
         )
@@ -192,12 +129,14 @@ async def test_get_checkin_hides_private_checkin_from_other_users(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.PRIVATE,
@@ -216,12 +155,14 @@ async def test_get_checkin_reveals_private_checkin_to_admin(
     owner = await _create_user(db_session)
     admin = await _create_user(db_session, role=UserRole.ADMIN)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.PRIVATE,
@@ -244,12 +185,14 @@ async def test_get_checkin_reveals_close_friends_checkin_only_to_close_friends(
         db_session, user_id=owner.id, friend_id=close_friend_user.id
     )
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.CLOSE_FRIENDS,
@@ -270,12 +213,14 @@ async def test_list_checkins_for_venue_filters_private_checkins(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.PUBLIC,
@@ -284,7 +229,10 @@ async def test_list_checkins_for_venue_filters_private_checkins(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=3)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.PRIVATE,
@@ -309,12 +257,14 @@ async def test_list_checkins_for_user_filters_private_checkins(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.PRIVATE,
@@ -336,12 +286,14 @@ async def test_update_checkin_persists_changes_for_the_owner(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
     )
@@ -357,12 +309,14 @@ async def test_update_checkin_raises_for_non_owner(db_session: AsyncSession) -> 
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
     )
@@ -387,12 +341,14 @@ async def test_update_checkin_by_non_owner_on_a_private_checkin_returns_not_foun
     owner = await _create_user(db_session)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
         visibility=Visibility.PRIVATE,
@@ -409,12 +365,14 @@ async def test_soft_delete_excludes_checkin_from_listings_and_lookup(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
     )
@@ -432,23 +390,23 @@ async def test_soft_delete_excludes_checkin_from_listings_and_lookup(
     assert listing == []
 
     # The row itself still exists — this was a soft delete.
-    result = await db_session.execute(
-        select(CheckinProduct).where(CheckinProduct.checkin_id == checkin.id)
-    )
-    assert len(result.scalars().all()) == 1
+    result = await db_session.execute(select(Checkin).where(Checkin.id == checkin.id))
+    assert result.scalar_one().deleted_at is not None
 
 
-async def test_hard_delete_removes_checkin_and_cascades_to_products(
+async def test_hard_delete_removes_the_row_entirely(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
     )
@@ -458,9 +416,7 @@ async def test_hard_delete_removes_checkin_and_cascades_to_products(
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.get_checkin(db_session, checkin.id, viewer=owner)
 
-    result = await db_session.execute(
-        select(CheckinProduct).where(CheckinProduct.checkin_id == checkin.id)
-    )
+    result = await db_session.execute(select(Checkin).where(Checkin.id == checkin.id))
     assert result.scalars().all() == []
 
 
@@ -469,12 +425,14 @@ async def test_hard_delete_can_purge_an_already_soft_deleted_checkin(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    product = await _create_product(db_session, venue)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
         venue_id=venue.id,
-        products=[ProductRating(product_id=product.id, rating=4)],
+        rating_taste=4,
+        rating_service=3,
+        rating_ambiance=3,
+        rating_value=2,
         visited_at=date.today(),
         visited_tz=_TZ,
     )

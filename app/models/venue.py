@@ -53,8 +53,16 @@ class Venue(Base):
     )
     address_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_places_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    added_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    # The one user reference that isn't purged with the account: a venue
+    # is a shared resource other users rely on, not personal content, so
+    # it outlives whoever added it and simply loses the attribution.
+    # This is why the column is nullable — see ADR-0011 and the PDD's
+    # account-deletion decision.
+    added_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     category_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

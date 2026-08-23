@@ -20,7 +20,7 @@ class ListBookmark(Base):
     # The leading PK column already serves "show me my bookmarks"
     # (filtered by user_id alone) efficiently — no separate index needed.
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     list_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

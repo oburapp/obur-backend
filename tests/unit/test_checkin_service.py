@@ -10,21 +10,32 @@ import pytest
 from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
-    DuplicateProductRatingError,
-    EmptyProductListError,
     FutureVisitDateError,
     NotCheckinOwnerError,
-    ProductNotAtVenueError,
     VenueNotFoundError,
 )
 from app.models.checkin import Checkin
-from app.models.checkin_product import CheckinProduct
 from app.models.user import User, UserRole
 from app.models.venue import Venue
 from app.services import checkin as checkin_service
-from app.services.checkin import ProductRating
 
 _TZ = "Europe/Istanbul"
+
+# The four venue criteria are all required (ADR-0011). Named individually so
+# call sites can pass them as real keyword arguments — unpacking a
+# `dict[str, int]` into a typed signature defeats the type checker, which
+# then can't tell these apart from `note` or `visibility`.
+_TASTE = 4
+_SERVICE = 3
+_AMBIANCE = 3
+_VALUE = 2
+
+_RATINGS: dict[str, int] = {
+    "rating_taste": _TASTE,
+    "rating_service": _SERVICE,
+    "rating_ambiance": _AMBIANCE,
+    "rating_value": _VALUE,
+}
 
 
 def _user(user_id: object = None, role: str = UserRole.USER) -> User:
@@ -39,6 +50,7 @@ def _checkin(**overrides: object) -> Checkin:
         "user_id": uuid4(),
         "venue_id": uuid4(),
         "visibility": Visibility.PUBLIC,
+        **_RATINGS,
         "visited_at": date.today(),
         "visited_tz": _TZ,
         "deleted_at": None,
@@ -47,68 +59,34 @@ def _checkin(**overrides: object) -> Checkin:
     return Checkin(**defaults)
 
 
-def _session_for_create(
-    *, venue: Venue | None, available_product_ids: list[object]
-) -> AsyncMock:
+def _session_for_create(*, venue: Venue | None) -> AsyncMock:
     session = AsyncMock()
     session.add = MagicMock()
     session.get = AsyncMock(return_value=venue)
-    result = MagicMock()
-    result.scalars.return_value.all.return_value = available_product_ids
-    session.execute.return_value = result
     return session
 
 
 async def test_create_checkin_raises_when_venue_not_found() -> None:
-    session = _session_for_create(venue=None, available_product_ids=[])
+    session = _session_for_create(venue=None)
 
     with pytest.raises(VenueNotFoundError):
         await checkin_service.create_checkin(
             session,
             user_id=uuid4(),
             venue_id=uuid4(),
-            products=[ProductRating(product_id=uuid4(), rating=4)],
             visited_at=date.today(),
             visited_tz=_TZ,
+            rating_taste=_TASTE,
+            rating_service=_SERVICE,
+            rating_ambiance=_AMBIANCE,
+            rating_value=_VALUE,
         )
 
     session.add.assert_not_called()
 
 
-async def test_create_checkin_raises_when_no_products() -> None:
-    session = _session_for_create(venue=MagicMock(spec=Venue), available_product_ids=[])
-
-    with pytest.raises(EmptyProductListError):
-        await checkin_service.create_checkin(
-            session,
-            user_id=uuid4(),
-            venue_id=uuid4(),
-            products=[],
-            visited_at=date.today(),
-            visited_tz=_TZ,
-        )
-
-
-async def test_create_checkin_raises_on_duplicate_product() -> None:
-    session = _session_for_create(venue=MagicMock(spec=Venue), available_product_ids=[])
-    product_id = uuid4()
-
-    with pytest.raises(DuplicateProductRatingError):
-        await checkin_service.create_checkin(
-            session,
-            user_id=uuid4(),
-            venue_id=uuid4(),
-            products=[
-                ProductRating(product_id=product_id, rating=4),
-                ProductRating(product_id=product_id, rating=2),
-            ],
-            visited_at=date.today(),
-            visited_tz=_TZ,
-        )
-
-
 async def test_create_checkin_raises_on_future_visit_date() -> None:
-    session = _session_for_create(venue=MagicMock(spec=Venue), available_product_ids=[])
+    session = _session_for_create(venue=MagicMock(spec=Venue))
     tomorrow = datetime.now(ZoneInfo(_TZ)).date() + timedelta(days=1)
 
     with pytest.raises(FutureVisitDateError):
@@ -116,44 +94,35 @@ async def test_create_checkin_raises_on_future_visit_date() -> None:
             session,
             user_id=uuid4(),
             venue_id=uuid4(),
-            products=[ProductRating(product_id=uuid4(), rating=4)],
             visited_at=tomorrow,
             visited_tz=_TZ,
+            rating_taste=_TASTE,
+            rating_service=_SERVICE,
+            rating_ambiance=_AMBIANCE,
+            rating_value=_VALUE,
         )
 
 
-async def test_create_checkin_raises_when_product_not_available_at_venue() -> None:
-    session = _session_for_create(venue=MagicMock(spec=Venue), available_product_ids=[])
-
-    with pytest.raises(ProductNotAtVenueError):
-        await checkin_service.create_checkin(
-            session,
-            user_id=uuid4(),
-            venue_id=uuid4(),
-            products=[ProductRating(product_id=uuid4(), rating=4)],
-            visited_at=date.today(),
-            visited_tz=_TZ,
-        )
-
-
-async def test_create_checkin_succeeds_with_available_products() -> None:
-    product_id = uuid4()
-    session = _session_for_create(
-        venue=MagicMock(spec=Venue), available_product_ids=[product_id]
-    )
+async def test_create_checkin_persists_all_four_criteria() -> None:
+    session = _session_for_create(venue=MagicMock(spec=Venue))
 
     checkin = await checkin_service.create_checkin(
         session,
         user_id=uuid4(),
         venue_id=uuid4(),
-        products=[ProductRating(product_id=product_id, rating=4)],
         visited_at=date.today(),
         visited_tz=_TZ,
+        rating_taste=_TASTE,
+        rating_service=_SERVICE,
+        rating_ambiance=_AMBIANCE,
+        rating_value=_VALUE,
     )
 
     assert checkin.visited_tz == _TZ
-    # One add for the checkin, one for its single product.
-    assert session.add.call_count == 2
+    for field, value in _RATINGS.items():
+        assert getattr(checkin, field) == value
+    # One row per check-in now — there is no per-item table to add to.
+    assert session.add.call_count == 1
     session.commit.assert_awaited_once()
     session.refresh.assert_awaited_once()
 
@@ -365,41 +334,6 @@ async def test_hard_delete_checkin_deletes_and_commits() -> None:
 
     session.delete.assert_awaited_once_with(checkin)
     session.commit.assert_awaited_once()
-
-
-async def test_get_products_for_checkins_returns_empty_dict_for_empty_input() -> None:
-    session = AsyncMock()
-
-    result = await checkin_service.get_products_for_checkins(session, [])
-
-    assert result == {}
-    session.execute.assert_not_called()
-
-
-async def test_get_products_for_checkins_groups_by_checkin_id() -> None:
-    checkin_id_a, checkin_id_b = uuid4(), uuid4()
-    rows = [
-        CheckinProduct(
-            id=uuid4(), checkin_id=checkin_id_a, product_id=uuid4(), rating=4
-        ),
-        CheckinProduct(
-            id=uuid4(), checkin_id=checkin_id_a, product_id=uuid4(), rating=3
-        ),
-        CheckinProduct(
-            id=uuid4(), checkin_id=checkin_id_b, product_id=uuid4(), rating=2
-        ),
-    ]
-    session = AsyncMock()
-    result_mock = MagicMock()
-    result_mock.scalars.return_value.all.return_value = rows
-    session.execute.return_value = result_mock
-
-    grouped = await checkin_service.get_products_for_checkins(
-        session, [checkin_id_a, checkin_id_b]
-    )
-
-    assert len(grouped[checkin_id_a]) == 2
-    assert len(grouped[checkin_id_b]) == 1
 
 
 async def test_list_checkins_for_venue_returns_results() -> None:

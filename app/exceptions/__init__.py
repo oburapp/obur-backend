@@ -8,11 +8,8 @@ from app.exceptions.auth_exceptions import (
 from app.exceptions.checkin_exceptions import (
     CheckinError,
     CheckinNotFoundError,
-    DuplicateProductRatingError,
-    EmptyProductListError,
     FutureVisitDateError,
     NotCheckinOwnerError,
-    ProductNotAtVenueError,
 )
 from app.exceptions.social_exceptions import (
     BookmarkNotFoundError,
@@ -28,12 +25,15 @@ from app.exceptions.social_exceptions import (
     SelfFollowError,
     SocialError,
 )
+from app.exceptions.user_exceptions import (
+    AccountNotFrozenError,
+    UserError,
+    UsernameChangedTooRecentlyError,
+    UsernameTakenError,
+)
 from app.exceptions.venue_exceptions import (
     DuplicateVenueNearbyError,
-    GlobalProductTypeNotFoundError,
     NotVenueSaveOwnerError,
-    ProductError,
-    ProductNotFoundError,
     VenueCategoryNotFoundError,
     VenueError,
     VenueNotFoundError,
@@ -41,18 +41,16 @@ from app.exceptions.venue_exceptions import (
 )
 
 __all__ = [
+    "AccountNotFrozenError",
     "AuthError",
     "BookmarkNotFoundError",
     "CheckinError",
     "CheckinNotFoundError",
     "CloseFriendNotFoundError",
     "DuplicateListItemError",
-    "DuplicateProductRatingError",
     "DuplicateVenueNearbyError",
-    "EmptyProductListError",
     "FollowNotFoundError",
     "FutureVisitDateError",
-    "GlobalProductTypeNotFoundError",
     "InvalidTokenError",
     "InvalidWebhookSignatureError",
     "LikeNotFoundError",
@@ -63,11 +61,11 @@ __all__ = [
     "NotCheckinOwnerError",
     "NotListOwnerError",
     "NotVenueSaveOwnerError",
-    "ProductError",
-    "ProductNotAtVenueError",
-    "ProductNotFoundError",
     "SelfFollowError",
     "SocialError",
+    "UserError",
+    "UsernameChangedTooRecentlyError",
+    "UsernameTakenError",
     "VenueCategoryNotFoundError",
     "VenueError",
     "VenueNotFoundError",

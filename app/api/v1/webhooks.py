@@ -11,6 +11,7 @@ from svix.webhooks import Webhook, WebhookVerificationError
 
 from app.core.config import get_settings
 from app.core.database import get_session
+from app.core.user_identity import default_display_name, fallback_username
 from app.exceptions import InvalidWebhookSignatureError
 from app.models.user import User
 from app.schemas.webhook import ClerkUserData, ClerkWebhookEvent, WebhookAckResponse
@@ -39,18 +40,32 @@ def _verify_signature(payload: bytes, headers: dict[str, str]) -> dict[str, obje
 
 
 async def _upsert_user(session: AsyncSession, data: ClerkUserData) -> None:
-    """Create or update the `User` row matching this Clerk user."""
+    """Create or update the `User` row matching this Clerk user.
+
+    `username` and `display_name` are seeded on insert and then left
+    alone: they are Obur-owned profile fields, edited through Obur's own
+    profile endpoint (with a rate limit on the handle), so letting a
+    later `user.updated` overwrite them would silently undo a change the
+    user made here. Provider-owned fields — `email` and `avatar_url` —
+    keep syncing on every event, which is the reason this webhook exists
+    at all.
+    """
+    username = data.username or fallback_username(_AUTH_PROVIDER, data.id)
     stmt = pg_insert(User).values(
         auth_provider=_AUTH_PROVIDER,
         auth_provider_id=data.id,
-        username=data.username,
+        username=username,
+        display_name=default_display_name(
+            first_name=data.first_name,
+            last_name=data.last_name,
+            username=username,
+        ),
         email=data.primary_email,
         avatar_url=data.image_url,
     )
     stmt = stmt.on_conflict_do_update(
         constraint="uq_user_auth_identity",
         set_={
-            "username": stmt.excluded.username,
             "email": stmt.excluded.email,
             "avatar_url": stmt.excluded.avatar_url,
         },
@@ -62,10 +77,15 @@ async def _upsert_user(session: AsyncSession, data: ClerkUserData) -> None:
 async def _delete_user(session: AsyncSession, auth_provider_id: str) -> None:
     """Remove the `User` row for a deleted Clerk account.
 
-    Hard delete: as of Phase 1, no other table references `users.id` yet,
-    so there's nothing to cascade or preserve. Once check-ins/follows/etc.
-    exist, revisit against the PDD's "historical data is never deleted"
-    principle — this may need to anonymize-and-preserve instead.
+    A plain delete is the whole purge: every table referencing `users.id`
+    declares its own delete policy, so the database cascades personal
+    content away and sets `VENUE.added_by` to `NULL` for venues the account
+    added. Nothing to enumerate here, and nothing to keep in step as new
+    user-owned tables appear.
+
+    This is the one deliberate exception to "historical data is never
+    deleted" (PDD §7): once someone asks to be forgotten, the data goes,
+    not just its attribution.
     """
     await session.execute(
         delete(User).where(

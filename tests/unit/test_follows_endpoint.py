@@ -11,7 +11,13 @@ from app.exceptions import FollowNotFoundError, SelfFollowError
 from app.main import app
 from app.models.user import User
 
-_USER = User(id=uuid4(), auth_provider="clerk", auth_provider_id="user_123")
+_USER = User(
+    id=uuid4(),
+    auth_provider="clerk",
+    auth_provider_id="user_123",
+    username="erenm",
+    display_name="Eren",
+)
 
 
 async def test_follow_user_returns_422_for_self_follow(

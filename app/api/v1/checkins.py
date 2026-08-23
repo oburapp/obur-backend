@@ -10,15 +10,11 @@ from app.core.database import get_session
 from app.exceptions import (
     BookmarkNotFoundError,
     CheckinNotFoundError,
-    DuplicateProductRatingError,
-    EmptyProductListError,
     FutureVisitDateError,
     LikeNotFoundError,
     NotCheckinOwnerError,
-    ProductNotAtVenueError,
     VenueNotFoundError,
 )
-from app.models.checkin import Checkin
 from app.models.user import User
 from app.schemas.checkin import (
     CheckinCreateRequest,
@@ -28,16 +24,10 @@ from app.schemas.checkin import (
 from app.services import bookmark as bookmark_service
 from app.services import checkin as checkin_service
 from app.services import like as like_service
-from app.services.checkin import ProductRating
 
 _CHECKIN_NOT_FOUND_DETAIL = "Checkin not found"
 
 router = APIRouter(prefix="/checkins", tags=["checkins"])
-
-
-async def _build_response(session: AsyncSession, checkin: Checkin) -> CheckinResponse:
-    products = await checkin_service.get_products_for_checkins(session, [checkin.id])
-    return CheckinResponse.from_models(checkin, products.get(checkin.id, []))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -46,20 +36,15 @@ async def create_checkin(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> CheckinResponse:
-    """Create a check-in: one visit, its optional venue-level ratings,
-    and every rated product, in a single transaction.
-    """
+    """Create a check-in: one visit and its venue-level ratings."""
     try:
         checkin = await checkin_service.create_checkin(
             session,
             user_id=current_user.id,
             venue_id=payload.venue_id,
-            products=[
-                ProductRating(product_id=p.product_id, rating=p.rating)
-                for p in payload.products
-            ],
             visited_at=payload.visited_at,
             visited_tz=payload.visited_tz,
+            rating_taste=payload.rating_taste,
             rating_service=payload.rating_service,
             rating_ambiance=payload.rating_ambiance,
             rating_value=payload.rating_value,
@@ -71,17 +56,12 @@ async def create_checkin(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found"
         ) from e
-    except (
-        EmptyProductListError,
-        DuplicateProductRatingError,
-        ProductNotAtVenueError,
-        FutureVisitDateError,
-    ) as e:
+    except FutureVisitDateError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
         ) from e
 
-    return await _build_response(session, checkin)
+    return CheckinResponse.model_validate(checkin)
 
 
 @router.get("/{checkin_id}")
@@ -101,7 +81,7 @@ async def get_checkin(
             status_code=status.HTTP_404_NOT_FOUND, detail=_CHECKIN_NOT_FOUND_DETAIL
         ) from e
 
-    return await _build_response(session, checkin)
+    return CheckinResponse.model_validate(checkin)
 
 
 @router.patch("/{checkin_id}")
@@ -112,7 +92,7 @@ async def update_checkin(
     session: AsyncSession = Depends(get_session),
 ) -> CheckinResponse:
     """Update a check-in's editable fields. Owner or admin only. The
-    rated products themselves aren't editable through this endpoint.
+    see ADR-0011 in obur-docs for what stays editable.
     """
     try:
         checkin = await checkin_service.update_checkin(
@@ -132,7 +112,7 @@ async def update_checkin(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
         ) from e
 
-    return await _build_response(session, checkin)
+    return CheckinResponse.model_validate(checkin)
 
 
 @router.delete("/{checkin_id}", status_code=status.HTTP_204_NO_CONTENT)

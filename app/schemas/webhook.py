@@ -20,6 +20,8 @@ class ClerkUserData(BaseModel):
 
     id: str
     username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     email_addresses: list[ClerkEmailAddress] = []
     primary_email_address_id: str | None = None
     image_url: str | None = None

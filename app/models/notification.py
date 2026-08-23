@@ -51,13 +51,20 @@ class Notification(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     type: Mapped[str] = mapped_column(String, nullable=False)
     # Who did it — nullable for a future system-generated notification
-    # type (e.g. a badge award) with no acting user.
+    # type (e.g. a badge award) with no acting user. That is also why
+    # a deleted actor cascades the notification away rather than
+    # nulling this column: NULL already means "no actor by design",
+    # and reusing it for "the actor is gone" would make a deleted
+    # user's action look like the platform's own.
     actor_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     target_type: Mapped[str] = mapped_column(String, nullable=False)
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

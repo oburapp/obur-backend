@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CHECKIN.rating_taste`, making four required venue criteria — taste,
+  service, ambiance, value. Food quality previously lived entirely in
+  `CHECKIN_PRODUCT.rating`, so removing the product layer without this
+  would have left a food-and-drink platform that rates atmosphere and
+  service but never the food (ADR-0011)
+- `USER.display_name` (free text, deliberately not unique) and
+  `USER.status` (`active`/`frozen`/`suspended`, kept separate from
+  `role` — one is standing, the other permission); `username` becomes a
+  required unique handle
+- `app/core/user_identity.py`: the defaults both user-creating paths
+  derive from. Clerk's `username` is optional and the JIT fallback has
+  no profile data at all, so a required handle needs generating — done
+  deterministically from the provider identity pair, so the webhook and
+  the JIT path can race and still produce the same handle
+- `app/seeds/runner.py` and `just seed` / `just setup-db`: an idempotent
+  reference-data seeder, replacing the seed migration (ADR-0012)
+- Self-service account management: `PATCH /api/v1/users/me`,
+  `POST /api/v1/users/me/freeze`, and `DELETE /api/v1/users/me`. Freezing
+  is reversed by simply signing back in — there is no unfreeze endpoint to
+  find — while suspension stays admin-only and is never user-reversible
+- `USER.username_changed_at`, backing a rate limit on handle changes. An
+  unrestricted handle is an impersonation vector in a way a display name
+  isn't; the window lives on the row rather than in Redis, since a cache
+  flush must not hand someone a fresh allowance
+- Frozen and suspended accounts drop out of other people's listings via a
+  shared query predicate (`app.core.authz.account_is_visible`), applied as
+  a condition rather than a post-filter so page sizes stay honest
+- `README.md`
+- `tests/unit/test_migration_isolation.py`: fails if any file under
+  `migrations/versions/` imports from `app/`
+
+### Removed
+
+- The product layer — `PRODUCT`, `GLOBAL_PRODUCT_TYPE` (+ its
+  translation table), and `CHECKIN_PRODUCT`, with their services,
+  schemas, endpoints, seed data, and tests. At MVP volume no individual
+  item could reach §8's 10-rating floor, so the two check-in steps this
+  cost every user returned no label; what was eaten belongs in `note`.
+  See ADR-0011 in obur-docs
+- `POST/GET /api/v1/products`, and the product list on check-in
+  creation — a check-in is now a venue and four ratings
+
+### Fixed
+
+- The Clerk `user.deleted` webhook could not delete any user who had
+  ever created content. It issued a plain `DELETE` against `users`, and
+  no foreign key referencing `users.id` declared an `ondelete` — so the
+  delete failed on a foreign-key violation, the webhook returned 500,
+  Clerk retried indefinitely, and the account stayed in our database
+  after being deleted at the provider. Written in Phase 1 when nothing
+  referenced `users.id` yet, with a comment to revisit once check-ins
+  and follows existed; they have since Phase 3. All twelve references
+  now declare a policy: eleven `CASCADE` (personal content is purged
+  with the account), and `VENUE.added_by` `SET NULL`, since a venue is a
+  shared resource that outlives whoever added it
+
+### Changed
+
+- `app/services/list.py` split into the list itself and
+  `app/services/list_item.py` for its contents — both were over the
+  300-line limit this repo sets for itself, and ordering is a separate
+  concern from the list it orders
+- `rating_value` redefined from "the payoff of the overall experience" to
+  **value for money** (Turkish label *Değer* → *Fiyat*). With taste,
+  service, and ambiance each rated separately, the old definition
+  overlapped all three and measured nothing of its own; as a price
+  signal it is the only criterion that can tell an excellent venue from
+  an excellent venue that overcharges
+- `docs/roadmap.md` rewritten from Phase 5 onward to cover the PDD in
+  full. The old version was written against an earlier PDD and had
+  drifted both ways: shipped code contradicting the PDD in about a dozen
+  places, and about a dozen PDD domains no phase covered at all. Phases
+  0–4 are kept verbatim as the record of what actually shipped. Three new
+  sections make the coverage claim checkable — **Standing Rules** (a
+  per-phase definition of done, including PDD/ER/ADR updated in the same
+  PR as the decision that changed them), **Out of Scope**, and a **PDD
+  Coverage Matrix**. Cross-cutting concerns move to Phase 7 and are
+  applied by every phase after it, rather than deferred to one late phase
+  the way the drift being corrected here originally happened
+- `docs/roadmap.md` and `docs/project-structure.md` updated for ADR-0011.
+  Phase 13 shrinks — the two-level aggregate collapses to a single
+  venue-level score, the cross-venue item ranking is gone, and
+  personalized history is re-keyed from `GLOBAL_PRODUCT_TYPE` to
+  `VENUE.category_id`. Phase 6 picks up expanding the venue-category
+  catalog from its current 9 entries, since `VENUE.category_id` is now
+  the platform's only classification dimension and three separate
+  readers depend on its granularity
+- Catalog seeding moved out of migration `61f7b67600da` into
+  `app/seeds/runner.py`, an idempotent upsert run explicitly rather than
+  as a migration step — `just seed`, `just setup-db`, and the integration
+  session fixture. The migration is now a documented no-op, keeping its
+  revision so the chain stays intact. Its five `app/` imports were what
+  broke Alembic entirely when ADR-0011 removed a seed module, and
+  reference data was in the wrong place regardless: Phase 6 grows the
+  venue-category catalog, and a one-shot migration had no way to apply
+  that growth. See ADR-0012 in obur-docs
+- `docs/project-structure.md` resynced with the actual filesystem
+  (`docker/`, `justfile`, `alembic.ini`, and most of `app/core/` were
+  missing) and every entry that doesn't exist yet is now annotated with
+  the phase that adds it, so the file reads as a plan being tracked
+  rather than an aspiration
+
 ## [0.5.0] - 2026-08-19
 
 ### Added

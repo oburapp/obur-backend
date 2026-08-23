@@ -3,8 +3,8 @@
 Four discrete values, no neutral option — an even count structurally
 reduces rating inflation (everyone giving the top score), unlike a 1-5
 star scale. See the PDD's "Rating System" section. Used by both
-`CHECKIN` (venue-level criteria) and `CHECKIN_PRODUCT` (per-product
-rating) — same scale, same meaning, in one place so it can't drift.
+every venue-level criterion on `CHECKIN` — one scale, one meaning, in
+one place so it can't drift.
 """
 
 MIN_RATING = 1

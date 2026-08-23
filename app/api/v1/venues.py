@@ -111,10 +111,4 @@ async def list_venue_checkins(
     checkins = await checkin_service.list_checkins_for_venue(
         session, venue_id, viewer=viewer, limit=limit, offset=offset
     )
-    products_by_checkin = await checkin_service.get_products_for_checkins(
-        session, [checkin.id for checkin in checkins]
-    )
-    return [
-        CheckinResponse.from_models(checkin, products_by_checkin.get(checkin.id, []))
-        for checkin in checkins
-    ]
+    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
