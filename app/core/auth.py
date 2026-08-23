@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.security import verify_session
+from app.core.user_identity import fallback_username
 from app.exceptions import InvalidTokenError
 from app.models.user import User
 
@@ -83,7 +84,23 @@ async def _find_user(session: AsyncSession, auth_provider_id: str) -> User | Non
 
 
 async def _create_user_jit(session: AsyncSession, auth_provider_id: str) -> User:
-    user = User(auth_provider=_AUTH_PROVIDER, auth_provider_id=auth_provider_id)
+    """Create the minimal fallback row for a user the webhook hasn't
+    reached yet.
+
+    `username` and `display_name` are required but unknown here — the
+    session token carries no profile data — so both are derived from the
+    provider identity (see app.core.user_identity), exactly as the
+    webhook derives them when Clerk supplies no username. Whichever path
+    wins the race therefore writes the same values, and the webhook's
+    later `user.updated` deliberately won't overwrite them.
+    """
+    username = fallback_username(_AUTH_PROVIDER, auth_provider_id)
+    user = User(
+        auth_provider=_AUTH_PROVIDER,
+        auth_provider_id=auth_provider_id,
+        username=username,
+        display_name=username,
+    )
     session.add(user)
     try:
         await session.commit()

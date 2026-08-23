@@ -12,7 +12,8 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    username: str | None
+    display_name: str
+    username: str
     email: str | None
     bio: str | None
     avatar_url: str | None
@@ -21,6 +22,7 @@ class UserResponse(BaseModel):
     locale: str
     timezone: str | None
     role: str
+    status: str
     created_at: datetime
 
 
@@ -34,6 +36,7 @@ class UserSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    username: str | None
+    display_name: str
+    username: str
     bio: str | None
     avatar_url: str | None

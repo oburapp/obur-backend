@@ -63,6 +63,15 @@ migration message:
 migrate-check:
     uv run alembic check
 
+# Upsert the reference catalog (venue categories + translations).
+# Idempotent — safe to re-run, and required after editing anything under
+# app/seeds/. Runs alongside `migrate`, never from the app itself.
+seed:
+    uv run python -m app.seeds.runner
+
+# Bring a database fully up to date: schema, then reference data
+setup-db: migrate seed
+
 # --- App ---
 
 # Run the dev server with auto-reload

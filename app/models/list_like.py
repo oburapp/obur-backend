@@ -18,7 +18,7 @@ class ListLike(Base):
     __tablename__ = "list_likes"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     # Indexed on its own — the common query is "who/how many liked this
     # list", filtered by list_id alone.

@@ -12,11 +12,8 @@ from app.core.visibility import Visibility
 from app.exceptions import (
     BookmarkNotFoundError,
     CheckinNotFoundError,
-    DuplicateProductRatingError,
-    EmptyProductListError,
     FutureVisitDateError,
     NotCheckinOwnerError,
-    ProductNotAtVenueError,
     VenueNotFoundError,
 )
 from app.main import app
@@ -26,14 +23,22 @@ from app.models.user import User
 _USER = User(id=uuid4(), auth_provider="clerk", auth_provider_id="user_123")
 
 
+# All four venue criteria are required (ADR-0011) — shared by the response
+# fixture and the create payload so they can't drift apart.
+_RATINGS: dict[str, int] = {
+    "rating_taste": 4,
+    "rating_service": 3,
+    "rating_ambiance": 3,
+    "rating_value": 2,
+}
+
+
 def _checkin(**overrides: object) -> Checkin:
     defaults: dict[str, object] = {
         "id": uuid4(),
         "user_id": _USER.id,
         "venue_id": uuid4(),
-        "rating_service": None,
-        "rating_ambiance": None,
-        "rating_value": None,
+        **_RATINGS,
         "note": None,
         "photo_url": None,
         "visibility": Visibility.PUBLIC,
@@ -48,9 +53,9 @@ def _checkin(**overrides: object) -> Checkin:
 def _create_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "venue_id": str(uuid4()),
-        "products": [{"product_id": str(uuid4()), "rating": 4}],
         "visited_at": date.today().isoformat(),
         "visited_tz": "Europe/Istanbul",
+        **_RATINGS,
     }
     payload.update(overrides)
     return payload
@@ -64,17 +69,9 @@ async def _post_checkin(client: AsyncClient, **overrides: object) -> Response:
         app.dependency_overrides.clear()
 
 
-def _mock_get_products(mocker: MockerFixture) -> None:
-    mocker.patch(
-        "app.api.v1.checkins.checkin_service.get_products_for_checkins",
-        AsyncMock(return_value={}),
-    )
-
-
 async def test_create_checkin_returns_201(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
-    _mock_get_products(mocker)
     mocker.patch(
         "app.api.v1.checkins.checkin_service.create_checkin",
         AsyncMock(return_value=_checkin()),
@@ -83,7 +80,9 @@ async def test_create_checkin_returns_201(
     response = await _post_checkin(client)
 
     assert response.status_code == 201
-    assert response.json()["products"] == []
+    body = response.json()
+    for field, value in _RATINGS.items():
+        assert body[field] == value
 
 
 async def test_create_checkin_returns_404_when_venue_missing(
@@ -97,45 +96,6 @@ async def test_create_checkin_returns_404_when_venue_missing(
     response = await _post_checkin(client)
 
     assert response.status_code == 404
-
-
-async def test_create_checkin_returns_422_when_products_empty(
-    client: AsyncClient, mocker: MockerFixture
-) -> None:
-    mocker.patch(
-        "app.api.v1.checkins.checkin_service.create_checkin",
-        AsyncMock(side_effect=EmptyProductListError("nope")),
-    )
-
-    response = await _post_checkin(client)
-
-    assert response.status_code == 422
-
-
-async def test_create_checkin_returns_422_on_duplicate_product(
-    client: AsyncClient, mocker: MockerFixture
-) -> None:
-    mocker.patch(
-        "app.api.v1.checkins.checkin_service.create_checkin",
-        AsyncMock(side_effect=DuplicateProductRatingError("nope")),
-    )
-
-    response = await _post_checkin(client)
-
-    assert response.status_code == 422
-
-
-async def test_create_checkin_returns_422_when_product_not_at_venue(
-    client: AsyncClient, mocker: MockerFixture
-) -> None:
-    mocker.patch(
-        "app.api.v1.checkins.checkin_service.create_checkin",
-        AsyncMock(side_effect=ProductNotAtVenueError("nope")),
-    )
-
-    response = await _post_checkin(client)
-
-    assert response.status_code == 422
 
 
 async def test_create_checkin_returns_422_on_future_visit_date(
@@ -154,7 +114,6 @@ async def test_create_checkin_returns_422_on_future_visit_date(
 async def test_get_checkin_returns_200_when_found(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
-    _mock_get_products(mocker)
     checkin = _checkin()
     mocker.patch(
         "app.api.v1.checkins.checkin_service.get_checkin",
@@ -183,7 +142,6 @@ async def test_get_checkin_returns_404_when_not_found_or_private(
 async def test_update_checkin_returns_200_for_the_owner(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
-    _mock_get_products(mocker)
     checkin = _checkin(note="güncellendi")
     mocker.patch(
         "app.api.v1.checkins.checkin_service.update_checkin",
@@ -345,7 +303,6 @@ async def test_get_checkin_works_without_authentication(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     """The single-checkin GET is public — no dependency override needed."""
-    _mock_get_products(mocker)
     checkin = _checkin(visibility=Visibility.PUBLIC)
     mocker.patch(
         "app.api.v1.checkins.checkin_service.get_checkin",

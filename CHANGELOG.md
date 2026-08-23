@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CHECKIN.rating_taste`, making four required venue criteria — taste,
+  service, ambiance, value. Food quality previously lived entirely in
+  `CHECKIN_PRODUCT.rating`, so removing the product layer without this
+  would have left a food-and-drink platform that rates atmosphere and
+  service but never the food (ADR-0011)
+- `USER.display_name` (free text, deliberately not unique) and
+  `USER.status` (`active`/`frozen`/`suspended`, kept separate from
+  `role` — one is standing, the other permission); `username` becomes a
+  required unique handle
+- `app/core/user_identity.py`: the defaults both user-creating paths
+  derive from. Clerk's `username` is optional and the JIT fallback has
+  no profile data at all, so a required handle needs generating — done
+  deterministically from the provider identity pair, so the webhook and
+  the JIT path can race and still produce the same handle
+- `app/seeds/runner.py` and `just seed` / `just setup-db`: an idempotent
+  reference-data seeder, replacing the seed migration (ADR-0012)
+- `tests/unit/test_migration_isolation.py`: fails if any file under
+  `migrations/versions/` imports from `app/`
+
+### Removed
+
+- The product layer — `PRODUCT`, `GLOBAL_PRODUCT_TYPE` (+ its
+  translation table), and `CHECKIN_PRODUCT`, with their services,
+  schemas, endpoints, seed data, and tests. At MVP volume no individual
+  item could reach §8's 10-rating floor, so the two check-in steps this
+  cost every user returned no label; what was eaten belongs in `note`.
+  See ADR-0011 in obur-docs
+- `POST/GET /api/v1/products`, and the product list on check-in
+  creation — a check-in is now a venue and four ratings
+
+### Fixed
+
+- The Clerk `user.deleted` webhook could not delete any user who had
+  ever created content. It issued a plain `DELETE` against `users`, and
+  no foreign key referencing `users.id` declared an `ondelete` — so the
+  delete failed on a foreign-key violation, the webhook returned 500,
+  Clerk retried indefinitely, and the account stayed in our database
+  after being deleted at the provider. Written in Phase 1 when nothing
+  referenced `users.id` yet, with a comment to revisit once check-ins
+  and follows existed; they have since Phase 3. All twelve references
+  now declare a policy: eleven `CASCADE` (personal content is purged
+  with the account), and `VENUE.added_by` `SET NULL`, since a venue is a
+  shared resource that outlives whoever added it
+
+### Changed
+
+- `rating_value` redefined from "the payoff of the overall experience" to
+  **value for money** (Turkish label *Değer* → *Fiyat*). With taste,
+  service, and ambiance each rated separately, the old definition
+  overlapped all three and measured nothing of its own; as a price
+  signal it is the only criterion that can tell an excellent venue from
+  an excellent venue that overcharges
+- `docs/roadmap.md` rewritten from Phase 5 onward to cover the PDD in
+  full. The previous version was written against an earlier PDD and had
+  drifted in both directions: roughly a dozen points where shipped code
+  now contradicts the PDD (including a live defect — the Clerk
+  `user.deleted` handler still issues a plain `DELETE` against `users`,
+  which fails on a foreign-key violation for any user with content), and
+  roughly a dozen PDD domains no phase covered at all (blocking,
+  reporting, mute, mentions, hashtags, account lifecycle, check-in
+  drafts, the media pipeline, RLS, observability, the locale read path,
+  and the category catalog endpoints). Phases 0–4 are kept
+  verbatim as the historical record of what actually shipped; only their
+  forward phase-number references were repointed
+- The roadmap gained three sections that make its coverage claim
+  checkable rather than asserted: **Standing Rules**, a per-phase
+  definition of done (RLS policy, rate-limit tier, pagination cap,
+  block/mute/status filters, N+1 test, and — the rule that prevents a
+  repeat of this drift — PDD/ER/ADR updated in the same PR as the
+  decision that changed them); **Out of Scope**, listing what the PDD
+  mentions that the backend deliberately won't build, with reasons; and a
+  **PDD Coverage Matrix** mapping every feature-catalog row, table,
+  non-functional requirement, and open decision to a phase or to an
+  out-of-scope line
+- Cross-cutting concerns are no longer deferred to one late phase. The
+  mechanisms (RLS, rate limiting, error contract, latency instrumentation)
+  are built in Phase 7 and applied by every phase after it — deferring
+  them is what produced the drift being corrected here
+- `docs/roadmap.md` and `docs/project-structure.md` updated for ADR-0011.
+  Phase 13 shrinks — the two-level aggregate collapses to a single
+  venue-level score, the cross-venue item ranking is gone, and
+  personalized history is re-keyed from `GLOBAL_PRODUCT_TYPE` to
+  `VENUE.category_id`. Phase 6 picks up expanding the venue-category
+  catalog from its current 9 entries, since `VENUE.category_id` is now
+  the platform's only classification dimension and three separate
+  readers depend on its granularity
+- Catalog seeding moved out of migration `61f7b67600da` into
+  `app/seeds/runner.py`, an idempotent upsert run explicitly rather than
+  as a migration step — `just seed`, `just setup-db`, and the integration
+  session fixture. The migration is now a documented no-op, keeping its
+  revision so the chain stays intact. Its five `app/` imports were what
+  broke Alembic entirely when ADR-0011 removed a seed module, and
+  reference data was in the wrong place regardless: Phase 6 grows the
+  venue-category catalog, and a one-shot migration had no way to apply
+  that growth. See ADR-0012 in obur-docs
+- `tests/unit/test_migration_isolation.py`: fails if any file under
+  `migrations/versions/` imports from `app/`, naming the offenders. The
+  rule alone wouldn't have prevented the original break — the import
+  worked the day it was written and only failed months later — so it is
+  enforced mechanically, in the PR that would introduce it
+- `docs/project-structure.md` resynced with the actual filesystem
+  (`docker/`, `justfile`, `alembic.ini`, and most of `app/core/` were
+  missing) and every entry that doesn't exist yet is now annotated with
+  the phase that adds it, so the file reads as a plan being tracked
+  rather than an aspiration
+
 ## [0.5.0] - 2026-08-19
 
 ### Added

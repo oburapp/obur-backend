@@ -15,22 +15,6 @@ class FutureVisitDateError(CheckinError):
     """
 
 
-class DuplicateProductRatingError(CheckinError):
-    """Raised when the same product is rated more than once in a single
-    check-in.
-    """
-
-
-class ProductNotAtVenueError(CheckinError):
-    """Raised when a product being rated doesn't belong to the venue
-    being checked into.
-    """
-
-
-class EmptyProductListError(CheckinError):
-    """Raised when a check-in is submitted with no rated products."""
-
-
 class NotCheckinOwnerError(CheckinError):
     """Raised when a non-owner, non-admin user attempts to modify or
     delete a check-in — see `app.core.authz`.

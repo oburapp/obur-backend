@@ -18,9 +18,10 @@ def _checkin(**overrides: object) -> Checkin:
         "id": uuid4(),
         "user_id": uuid4(),
         "venue_id": uuid4(),
-        "rating_service": None,
-        "rating_ambiance": None,
-        "rating_value": None,
+        "rating_taste": 4,
+        "rating_service": 3,
+        "rating_ambiance": 3,
+        "rating_value": 2,
         "note": None,
         "photo_url": None,
         "visibility": Visibility.PUBLIC,
@@ -40,11 +41,6 @@ async def test_list_venue_checkins_returns_checkins(
         "app.api.v1.venues.checkin_service.list_checkins_for_venue",
         AsyncMock(return_value=checkins),
     )
-    mocker.patch(
-        "app.api.v1.venues.checkin_service.get_products_for_checkins",
-        AsyncMock(return_value={}),
-    )
-
     response = await client.get(f"/api/v1/venues/{uuid4()}/checkins")
 
     assert response.status_code == 200
@@ -59,11 +55,6 @@ async def test_list_user_checkins_returns_checkins(
         "app.api.v1.users.checkin_service.list_checkins_for_user",
         AsyncMock(return_value=checkins),
     )
-    mocker.patch(
-        "app.api.v1.users.checkin_service.get_products_for_checkins",
-        AsyncMock(return_value={}),
-    )
-
     response = await client.get(f"/api/v1/users/{uuid4()}/checkins")
 
     assert response.status_code == 200

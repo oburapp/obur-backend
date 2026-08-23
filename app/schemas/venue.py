@@ -35,7 +35,9 @@ class VenueResponse(BaseModel):
     lng: float
     address_note: str | None
     google_places_id: str | None
-    added_by: UUID
+    # Null once the account that added this venue has been deleted — the
+    # venue survives, the attribution doesn't (see app/models/venue.py).
+    added_by: UUID | None
     category_id: UUID
     city: str | None
     country_code: str | None

@@ -17,6 +17,7 @@ async def test_get_me_returns_the_authenticated_users_profile(
         id=uuid4(),
         auth_provider="clerk",
         auth_provider_id="user_123",
+        display_name="Eren M",
         username="erenm",
         email="eren@example.com",
         bio=None,
@@ -26,6 +27,7 @@ async def test_get_me_returns_the_authenticated_users_profile(
         locale="tr",
         timezone=None,
         role="user",
+        status="active",
         created_at=datetime.now(UTC),
     )
     app.dependency_overrides[get_current_user] = lambda: user

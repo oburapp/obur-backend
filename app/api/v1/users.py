@@ -42,13 +42,7 @@ async def list_user_checkins(
     checkins = await checkin_service.list_checkins_for_user(
         session, user_id, viewer=viewer, limit=limit, offset=offset
     )
-    products_by_checkin = await checkin_service.get_products_for_checkins(
-        session, [checkin.id for checkin in checkins]
-    )
-    return [
-        CheckinResponse.from_models(checkin, products_by_checkin.get(checkin.id, []))
-        for checkin in checkins
-    ]
+    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
 
 
 @router.get("/{user_id}/lists")
@@ -100,13 +94,7 @@ async def list_my_bookmarked_checkins(
     checkins = await bookmark_service.list_bookmarked_checkins(
         session, current_user.id, limit=limit, offset=offset
     )
-    products_by_checkin = await checkin_service.get_products_for_checkins(
-        session, [checkin.id for checkin in checkins]
-    )
-    return [
-        CheckinResponse.from_models(checkin, products_by_checkin.get(checkin.id, []))
-        for checkin in checkins
-    ]
+    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
 
 
 @router.get("/me/bookmarks/lists")
