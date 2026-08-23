@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the JIT path can race and still produce the same handle
 - `app/seeds/runner.py` and `just seed` / `just setup-db`: an idempotent
   reference-data seeder, replacing the seed migration (ADR-0012)
+- Self-service account management: `PATCH /api/v1/users/me`,
+  `POST /api/v1/users/me/freeze`, and `DELETE /api/v1/users/me`. Freezing
+  is reversed by simply signing back in — there is no unfreeze endpoint to
+  find — while suspension stays admin-only and is never user-reversible
+- `USER.username_changed_at`, backing a rate limit on handle changes. An
+  unrestricted handle is an impersonation vector in a way a display name
+  isn't; the window lives on the row rather than in Redis, since a cache
+  flush must not hand someone a fresh allowance
+- Frozen and suspended accounts drop out of other people's listings via a
+  shared query predicate (`app.core.authz.account_is_visible`), applied as
+  a condition rather than a post-filter so page sizes stay honest
+- `README.md`
 - `tests/unit/test_migration_isolation.py`: fails if any file under
   `migrations/versions/` imports from `app/`
 
@@ -55,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `app/services/list.py` split into the list itself and
+  `app/services/list_item.py` for its contents — both were over the
+  300-line limit this repo sets for itself, and ordering is a separate
+  concern from the list it orders
 - `rating_value` redefined from "the payoff of the overall experience" to
   **value for money** (Turkish label *Değer* → *Fiyat*). With taste,
   service, and ambiance each rated separately, the old definition

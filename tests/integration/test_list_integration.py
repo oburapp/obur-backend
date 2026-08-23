@@ -26,6 +26,7 @@ from app.seeds.identity import venue_category_id
 from app.services import close_friend as close_friend_service
 from app.services import follow as follow_service
 from app.services import list as list_service
+from app.services import list_item as list_item_service
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe")
 
@@ -158,7 +159,7 @@ async def test_add_list_item_raises_when_list_does_not_exist(
     venue = await _create_venue(db_session, owner, name="Mekan")
 
     with pytest.raises(ListNotFoundError):
-        await list_service.add_list_item(
+        await list_item_service.add_list_item(
             db_session, uuid4(), current_user=owner, venue_id=venue.id
         )
 
@@ -169,7 +170,7 @@ async def test_move_list_item_raises_when_list_does_not_exist(
     owner = await _create_user(db_session)
 
     with pytest.raises(ListNotFoundError):
-        await list_service.move_list_item(
+        await list_item_service.move_list_item(
             db_session, uuid4(), uuid4(), current_user=owner, after_item_id=None
         )
 
@@ -183,7 +184,7 @@ async def test_move_list_item_raises_when_item_does_not_exist(
     )
 
     with pytest.raises(ListItemNotFoundError):
-        await list_service.move_list_item(
+        await list_item_service.move_list_item(
             db_session, venue_list.id, uuid4(), current_user=owner, after_item_id=None
         )
 
@@ -194,7 +195,7 @@ async def test_remove_list_item_raises_when_list_does_not_exist(
     owner = await _create_user(db_session)
 
     with pytest.raises(ListNotFoundError):
-        await list_service.remove_list_item(
+        await list_item_service.remove_list_item(
             db_session, uuid4(), uuid4(), current_user=owner
         )
 
@@ -218,7 +219,7 @@ async def test_delete_list_cascades_to_its_items(db_session: AsyncSession) -> No
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
-    item = await list_service.add_list_item(
+    item = await list_item_service.add_list_item(
         db_session, venue_list.id, current_user=owner, venue_id=venue.id
     )
 
@@ -237,7 +238,7 @@ async def test_add_list_item_raises_when_venue_missing(
     )
 
     with pytest.raises(VenueNotFoundError):
-        await list_service.add_list_item(
+        await list_item_service.add_list_item(
             db_session, venue_list.id, current_user=owner, venue_id=uuid4()
         )
 
@@ -250,12 +251,12 @@ async def test_add_list_item_raises_on_duplicate_venue(
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
-    await list_service.add_list_item(
+    await list_item_service.add_list_item(
         db_session, venue_list.id, current_user=owner, venue_id=venue.id
     )
 
     with pytest.raises(DuplicateListItemError):
-        await list_service.add_list_item(
+        await list_item_service.add_list_item(
             db_session, venue_list.id, current_user=owner, venue_id=venue.id
         )
 
@@ -272,13 +273,13 @@ async def test_add_list_item_appends_to_the_end_by_default(
     ]
 
     items = [
-        await list_service.add_list_item(
+        await list_item_service.add_list_item(
             db_session, venue_list.id, current_user=owner, venue_id=venue.id
         )
         for venue in venues
     ]
 
-    ordered = await list_service.list_items_for_list(
+    ordered = await list_item_service.list_items_for_list(
         db_session, venue_list.id, limit=20, offset=0
     )
     assert [item.id for item in ordered] == [item.id for item in items]
@@ -294,14 +295,14 @@ async def test_add_list_item_inserts_after_a_given_item(
     venue_a = await _create_venue(db_session, owner, name="A")
     venue_b = await _create_venue(db_session, owner, name="B")
     venue_c = await _create_venue(db_session, owner, name="C")
-    item_a = await list_service.add_list_item(
+    item_a = await list_item_service.add_list_item(
         db_session, venue_list.id, current_user=owner, venue_id=venue_a.id
     )
-    item_c = await list_service.add_list_item(
+    item_c = await list_item_service.add_list_item(
         db_session, venue_list.id, current_user=owner, venue_id=venue_c.id
     )
 
-    item_b = await list_service.add_list_item(
+    item_b = await list_item_service.add_list_item(
         db_session,
         venue_list.id,
         current_user=owner,
@@ -309,7 +310,7 @@ async def test_add_list_item_inserts_after_a_given_item(
         after_item_id=item_a.id,
     )
 
-    ordered = await list_service.list_items_for_list(
+    ordered = await list_item_service.list_items_for_list(
         db_session, venue_list.id, limit=20, offset=0
     )
     assert [item.id for item in ordered] == [item_a.id, item_b.id, item_c.id]
@@ -324,17 +325,17 @@ async def test_move_list_item_to_the_very_start(db_session: AsyncSession) -> Non
         await _create_venue(db_session, owner, name=f"Mekan {i}") for i in range(3)
     ]
     items = [
-        await list_service.add_list_item(
+        await list_item_service.add_list_item(
             db_session, venue_list.id, current_user=owner, venue_id=venue.id
         )
         for venue in venues
     ]
 
-    await list_service.move_list_item(
+    await list_item_service.move_list_item(
         db_session, venue_list.id, items[-1].id, current_user=owner, after_item_id=None
     )
 
-    ordered = await list_service.list_items_for_list(
+    ordered = await list_item_service.list_items_for_list(
         db_session, venue_list.id, limit=20, offset=0
     )
     assert ordered[0].id == items[-1].id
@@ -348,15 +349,15 @@ async def test_move_list_item_raises_when_after_item_belongs_to_another_list(
     list_b = await list_service.create_list(db_session, user_id=owner.id, title="B")
     venue_a = await _create_venue(db_session, owner, name="A")
     venue_b = await _create_venue(db_session, owner, name="B")
-    item_in_a = await list_service.add_list_item(
+    item_in_a = await list_item_service.add_list_item(
         db_session, list_a.id, current_user=owner, venue_id=venue_a.id
     )
-    item_in_b = await list_service.add_list_item(
+    item_in_b = await list_item_service.add_list_item(
         db_session, list_b.id, current_user=owner, venue_id=venue_b.id
     )
 
     with pytest.raises(ListItemNotFoundError):
-        await list_service.move_list_item(
+        await list_item_service.move_list_item(
             db_session,
             list_a.id,
             item_in_a.id,
@@ -374,7 +375,7 @@ async def test_remove_list_item_raises_for_an_item_not_on_this_list(
     )
 
     with pytest.raises(ListItemNotFoundError):
-        await list_service.remove_list_item(
+        await list_item_service.remove_list_item(
             db_session, venue_list.id, uuid4(), current_user=owner
         )
 
@@ -390,17 +391,17 @@ async def test_remove_list_item_removes_it_and_preserves_remaining_order(
         await _create_venue(db_session, owner, name=f"Mekan {i}") for i in range(3)
     ]
     items = [
-        await list_service.add_list_item(
+        await list_item_service.add_list_item(
             db_session, venue_list.id, current_user=owner, venue_id=venue.id
         )
         for venue in venues
     ]
 
-    await list_service.remove_list_item(
+    await list_item_service.remove_list_item(
         db_session, venue_list.id, items[1].id, current_user=owner
     )
 
-    ordered = await list_service.list_items_for_list(
+    ordered = await list_item_service.list_items_for_list(
         db_session, venue_list.id, limit=20, offset=0
     )
     assert [item.id for item in ordered] == [items[0].id, items[2].id]
@@ -425,15 +426,15 @@ async def test_repeated_drag_to_front_ends_in_exact_reverse_insertion_order(
 
     inserted_ids = []
     for venue in venues:
-        item = await list_service.add_list_item(
+        item = await list_item_service.add_list_item(
             db_session, venue_list.id, current_user=owner, venue_id=venue.id
         )
-        await list_service.move_list_item(
+        await list_item_service.move_list_item(
             db_session, venue_list.id, item.id, current_user=owner, after_item_id=None
         )
         inserted_ids.append(item.id)
 
-    ordered = await list_service.list_items_for_list(
+    ordered = await list_item_service.list_items_for_list(
         db_session, venue_list.id, limit=20, offset=0
     )
     assert [item.id for item in ordered] == list(reversed(inserted_ids))

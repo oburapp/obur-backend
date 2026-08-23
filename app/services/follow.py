@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import account_is_visible
 from app.exceptions import FollowNotFoundError, SelfFollowError
 from app.models.follow import Follow
 from app.models.notification import NotificationTargetType, NotificationType
@@ -79,7 +80,7 @@ async def list_followers(
     result = await session.execute(
         select(User)
         .join(Follow, Follow.follower_id == User.id)
-        .where(Follow.following_id == user_id)
+        .where(Follow.following_id == user_id, account_is_visible(Follow.follower_id))
         .order_by(Follow.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -94,7 +95,7 @@ async def list_following(
     result = await session.execute(
         select(User)
         .join(Follow, Follow.following_id == User.id)
-        .where(Follow.follower_id == user_id)
+        .where(Follow.follower_id == user_id, account_is_visible(Follow.following_id))
         .order_by(Follow.created_at.desc())
         .limit(limit)
         .offset(offset)

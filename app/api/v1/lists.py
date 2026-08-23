@@ -29,6 +29,7 @@ from app.schemas.list import (
 from app.services import bookmark as bookmark_service
 from app.services import like as like_service
 from app.services import list as list_service
+from app.services import list_item as list_item_service
 
 router = APIRouter(prefix="/lists", tags=["lists"])
 
@@ -129,7 +130,7 @@ async def list_items(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
         ) from e
-    items = await list_service.list_items_for_list(
+    items = await list_item_service.list_items_for_list(
         session, list_id, limit=limit, offset=offset
     )
     return [ListItemResponse.model_validate(item) for item in items]
@@ -144,7 +145,7 @@ async def add_list_item(
 ) -> ListItemResponse:
     """Add a venue to a list. Owner or admin only."""
     try:
-        item = await list_service.add_list_item(
+        item = await list_item_service.add_list_item(
             session,
             list_id,
             current_user=current_user,
@@ -172,7 +173,7 @@ async def move_list_item(
 ) -> ListItemResponse:
     """Move an existing list item. Owner or admin only."""
     try:
-        item = await list_service.move_list_item(
+        item = await list_item_service.move_list_item(
             session,
             list_id,
             item_id,
@@ -195,7 +196,7 @@ async def remove_list_item(
 ) -> None:
     """Remove an item from a list. Owner or admin only."""
     try:
-        await list_service.remove_list_item(
+        await list_item_service.remove_list_item(
             session, list_id, item_id, current_user=current_user
         )
     except (ListNotFoundError, ListItemNotFoundError) as e:

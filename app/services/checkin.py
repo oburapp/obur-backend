@@ -10,6 +10,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import (
+    account_is_visible,
     can_view,
     close_friend_of_owner_exists,
     ensure_visible_and_owned,
@@ -135,7 +136,11 @@ async def list_checkins_for_venue(
     is allowed to see (see app.core.authz.can_view) — an admin sees
     everything.
     """
-    conditions = [Checkin.venue_id == venue_id, Checkin.deleted_at.is_(None)]
+    conditions = [
+        Checkin.venue_id == venue_id,
+        Checkin.deleted_at.is_(None),
+        account_is_visible(Checkin.user_id),
+    ]
     if viewer is None:
         conditions.append(Checkin.visibility == Visibility.PUBLIC)
     elif viewer.role != UserRole.ADMIN:
@@ -171,7 +176,11 @@ async def list_checkins_for_user(
     is allowed to see (see app.core.authz.can_view) — an admin sees
     everything.
     """
-    conditions = [Checkin.user_id == target_user_id, Checkin.deleted_at.is_(None)]
+    conditions = [
+        Checkin.user_id == target_user_id,
+        Checkin.deleted_at.is_(None),
+        account_is_visible(Checkin.user_id),
+    ]
     if viewer is None:
         conditions.append(Checkin.visibility == Visibility.PUBLIC)
     elif not is_owner_or_admin(target_user_id, viewer):

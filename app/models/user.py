@@ -96,6 +96,13 @@ class User(Base):
     # name isn't. Seeded from the auth provider or generated — see
     # app.core.user_identity.
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # When the handle was last changed, or NULL if it never has been. Drives
+    # the rate limit in app.services.user — kept on the row rather than in
+    # Redis because the window spans weeks, and a cache flush must not hand
+    # someone a fresh allowance.
+    username_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     email: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)

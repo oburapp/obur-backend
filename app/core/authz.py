@@ -15,12 +15,12 @@ import uuid
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, aliased
 
 from app.core.auth import get_current_user
 from app.core.visibility import Visibility
 from app.models.close_friend import CloseFriend
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, UserStatus
 
 
 def is_owner_or_admin(owner_id: uuid.UUID, current_user: User) -> bool:
@@ -132,5 +132,33 @@ def close_friend_of_owner_exists(
         .where(
             CloseFriend.user_id == owner_id_column, CloseFriend.friend_id == viewer_id
         )
+        .exists()
+    )
+
+
+def account_is_visible(
+    owner_id_column: InstrumentedAttribute[uuid.UUID],
+) -> ColumnElement[bool]:
+    """Correlated subquery: is the account that owns this row still visible
+    to other people?
+
+    A frozen or suspended account drops out of everyone else's listings
+    (PDD §6, §11). The two are the same to a viewer and differ only in who
+    can undo them — freezing is self-service and reverses on the owner's
+    next sign-in, suspension is admin-only and never user-reversible.
+
+    Applied as a query condition rather than a post-filter so a listing's
+    page size stays honest: filtering after the fact would return short
+    pages and let a caller infer that something was removed.
+
+    Uses an alias so the subquery keeps its own `users` reference. Several
+    callers already join `User` in the outer query, and without the alias
+    SQLAlchemy auto-correlates the inner one away, leaving a subquery with
+    no FROM clause at all.
+    """
+    owner = aliased(User)
+    return (
+        select(owner.id)
+        .where(owner.id == owner_id_column, owner.status == UserStatus.ACTIVE)
         .exists()
     )

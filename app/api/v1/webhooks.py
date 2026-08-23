@@ -77,10 +77,15 @@ async def _upsert_user(session: AsyncSession, data: ClerkUserData) -> None:
 async def _delete_user(session: AsyncSession, auth_provider_id: str) -> None:
     """Remove the `User` row for a deleted Clerk account.
 
-    Hard delete: as of Phase 1, no other table references `users.id` yet,
-    so there's nothing to cascade or preserve. Once check-ins/follows/etc.
-    exist, revisit against the PDD's "historical data is never deleted"
-    principle — this may need to anonymize-and-preserve instead.
+    A plain delete is the whole purge: every table referencing `users.id`
+    declares its own delete policy, so the database cascades personal
+    content away and sets `VENUE.added_by` to `NULL` for venues the account
+    added. Nothing to enumerate here, and nothing to keep in step as new
+    user-owned tables appear.
+
+    This is the one deliberate exception to "historical data is never
+    deleted" (PDD §7): once someone asks to be forgotten, the data goes,
+    not just its attribution.
     """
     await session.execute(
         delete(User).where(

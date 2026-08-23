@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import IntegrityError
 
 from app.core.auth import get_current_user, get_optional_current_user
 from app.exceptions import InvalidTokenError
-from app.models.user import User
+from app.models.user import User, UserStatus
 
 
 def _session_returning(user: User | None) -> AsyncMock:
@@ -125,3 +125,57 @@ async def test_get_optional_current_user_returns_user_on_valid_token(
     result = await get_optional_current_user(MagicMock(), session)
 
     assert result is existing
+
+
+async def test_get_current_user_rejects_a_suspended_account(
+    mocker: MockerFixture,
+) -> None:
+    """The suspended account itself is told plainly. The
+    "indistinguishable from nonexistent" rule shields the *other* party
+    from learning a moderation action happened (PDD §11) — hiding it from
+    the person it happened to would just read as a broken app.
+    """
+    session = AsyncMock()
+    mocker.patch(
+        "app.core.auth._resolve_user",
+        AsyncMock(return_value=User(status=UserStatus.SUSPENDED)),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await get_current_user(MagicMock(spec=Request), session)
+
+    assert excinfo.value.status_code == 403
+
+
+async def test_get_current_user_reactivates_a_frozen_account(
+    mocker: MockerFixture,
+) -> None:
+    """Signing back in is the reactivation gesture — there is no separate
+    unfreeze endpoint for a user to find (PDD §6).
+    """
+    frozen = User(status=UserStatus.FROZEN)
+    mocker.patch("app.core.auth._resolve_user", AsyncMock(return_value=frozen))
+    reactivate = mocker.patch(
+        "app.core.auth.user_service.reactivate_account",
+        AsyncMock(return_value=User(status=UserStatus.ACTIVE)),
+    )
+
+    resolved = await get_current_user(MagicMock(spec=Request), AsyncMock())
+
+    assert resolved.status == UserStatus.ACTIVE
+    reactivate.assert_awaited_once()
+
+
+async def test_get_optional_current_user_treats_a_suspended_account_as_anonymous(
+    mocker: MockerFixture,
+) -> None:
+    """This dependency backs endpoints that are public but richer for a
+    known viewer; a suspended caller should still get the public view
+    rather than a 403 from a read anyone else can make.
+    """
+    mocker.patch(
+        "app.core.auth._resolve_user",
+        AsyncMock(return_value=User(status=UserStatus.SUSPENDED)),
+    )
+
+    assert await get_optional_current_user(MagicMock(spec=Request), AsyncMock()) is None

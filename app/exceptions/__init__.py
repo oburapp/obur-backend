@@ -25,6 +25,12 @@ from app.exceptions.social_exceptions import (
     SelfFollowError,
     SocialError,
 )
+from app.exceptions.user_exceptions import (
+    AccountNotFrozenError,
+    UserError,
+    UsernameChangedTooRecentlyError,
+    UsernameTakenError,
+)
 from app.exceptions.venue_exceptions import (
     DuplicateVenueNearbyError,
     NotVenueSaveOwnerError,
@@ -35,6 +41,7 @@ from app.exceptions.venue_exceptions import (
 )
 
 __all__ = [
+    "AccountNotFrozenError",
     "AuthError",
     "BookmarkNotFoundError",
     "CheckinError",
@@ -56,6 +63,9 @@ __all__ = [
     "NotVenueSaveOwnerError",
     "SelfFollowError",
     "SocialError",
+    "UserError",
+    "UsernameChangedTooRecentlyError",
+    "UsernameTakenError",
     "VenueCategoryNotFoundError",
     "VenueError",
     "VenueNotFoundError",
