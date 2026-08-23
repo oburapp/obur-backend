@@ -78,31 +78,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signal it is the only criterion that can tell an excellent venue from
   an excellent venue that overcharges
 - `docs/roadmap.md` rewritten from Phase 5 onward to cover the PDD in
-  full. The previous version was written against an earlier PDD and had
-  drifted in both directions: roughly a dozen points where shipped code
-  now contradicts the PDD (including a live defect — the Clerk
-  `user.deleted` handler still issues a plain `DELETE` against `users`,
-  which fails on a foreign-key violation for any user with content), and
-  roughly a dozen PDD domains no phase covered at all (blocking,
-  reporting, mute, mentions, hashtags, account lifecycle, check-in
-  drafts, the media pipeline, RLS, observability, the locale read path,
-  and the category catalog endpoints). Phases 0–4 are kept
-  verbatim as the historical record of what actually shipped; only their
-  forward phase-number references were repointed
-- The roadmap gained three sections that make its coverage claim
-  checkable rather than asserted: **Standing Rules**, a per-phase
-  definition of done (RLS policy, rate-limit tier, pagination cap,
-  block/mute/status filters, N+1 test, and — the rule that prevents a
-  repeat of this drift — PDD/ER/ADR updated in the same PR as the
-  decision that changed them); **Out of Scope**, listing what the PDD
-  mentions that the backend deliberately won't build, with reasons; and a
-  **PDD Coverage Matrix** mapping every feature-catalog row, table,
-  non-functional requirement, and open decision to a phase or to an
-  out-of-scope line
-- Cross-cutting concerns are no longer deferred to one late phase. The
-  mechanisms (RLS, rate limiting, error contract, latency instrumentation)
-  are built in Phase 7 and applied by every phase after it — deferring
-  them is what produced the drift being corrected here
+  full. The old version was written against an earlier PDD and had
+  drifted both ways: shipped code contradicting the PDD in about a dozen
+  places, and about a dozen PDD domains no phase covered at all. Phases
+  0–4 are kept verbatim as the record of what actually shipped. Three new
+  sections make the coverage claim checkable — **Standing Rules** (a
+  per-phase definition of done, including PDD/ER/ADR updated in the same
+  PR as the decision that changed them), **Out of Scope**, and a **PDD
+  Coverage Matrix**. Cross-cutting concerns move to Phase 7 and are
+  applied by every phase after it, rather than deferred to one late phase
+  the way the drift being corrected here originally happened
 - `docs/roadmap.md` and `docs/project-structure.md` updated for ADR-0011.
   Phase 13 shrinks — the two-level aggregate collapses to a single
   venue-level score, the cross-venue item ranking is gone, and
@@ -120,11 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference data was in the wrong place regardless: Phase 6 grows the
   venue-category catalog, and a one-shot migration had no way to apply
   that growth. See ADR-0012 in obur-docs
-- `tests/unit/test_migration_isolation.py`: fails if any file under
-  `migrations/versions/` imports from `app/`, naming the offenders. The
-  rule alone wouldn't have prevented the original break — the import
-  worked the day it was written and only failed months later — so it is
-  enforced mechanically, in the PR that would introduce it
 - `docs/project-structure.md` resynced with the actual filesystem
   (`docker/`, `justfile`, `alembic.ini`, and most of `app/core/` were
   missing) and every entry that doesn't exist yet is now annotated with

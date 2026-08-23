@@ -47,6 +47,7 @@ obur-backend/
 │   │   ├── redis.py           # redis client
 │   │   ├── search.py          # trigram search helpers
 │   │   ├── security.py        # clerk JWT verification
+│   │   ├── user_identity.py   # handle/display-name defaults for new users
 │   │   ├── visibility.py      # the shared three visibility tiers
 │   │   ├── aggregates.py      # (Phase 13) confidence-bound scoring
 │   │   └── media.py           # (Phase 15) EXIF strip, resize, signed URLs
@@ -97,7 +98,7 @@ obur-backend/
 ├── pyproject.toml
 ├── uv.lock
 ├── Dockerfile                 # (Phase 8)
-├── README.md                  # (Phase 5) required by the shared standards
+├── README.md
 ├── CHANGELOG.md
 └── CLAUDE.md
 ```
