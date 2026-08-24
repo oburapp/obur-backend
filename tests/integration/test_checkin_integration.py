@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
@@ -45,6 +46,9 @@ async def _create_user(session: AsyncSession, *, role: str = UserRole.USER) -> U
 
 
 async def _create_venue(session: AsyncSession, added_by: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, added_by.id)
     venue = Venue(
         name="Kadıköy Kahve Durağı",
         lat=_LAT,
@@ -63,6 +67,7 @@ async def test_create_checkin_persists_and_is_retrievable(
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
 
+    await set_current_user_identity(db_session, user.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=user.id,
@@ -129,6 +134,7 @@ async def test_get_checkin_hides_private_checkin_from_other_users(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -142,9 +148,11 @@ async def test_get_checkin_hides_private_checkin_from_other_users(
         visibility=Visibility.PRIVATE,
     )
 
+    await set_current_user_identity(db_session, other_user.id)
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.get_checkin(db_session, checkin.id, viewer=other_user)
 
+    await set_current_user_identity(db_session, owner.id)
     fetched = await checkin_service.get_checkin(db_session, checkin.id, viewer=owner)
     assert fetched.id == checkin.id
 
@@ -155,6 +163,7 @@ async def test_get_checkin_reveals_private_checkin_to_admin(
     owner = await _create_user(db_session)
     admin = await _create_user(db_session, role=UserRole.ADMIN)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -168,6 +177,7 @@ async def test_get_checkin_reveals_private_checkin_to_admin(
         visibility=Visibility.PRIVATE,
     )
 
+    await set_current_user_identity(db_session, admin.id)
     fetched = await checkin_service.get_checkin(db_session, checkin.id, viewer=admin)
     assert fetched.id == checkin.id
 
@@ -178,13 +188,16 @@ async def test_get_checkin_reveals_close_friends_checkin_only_to_close_friends(
     owner = await _create_user(db_session)
     close_friend_user = await _create_user(db_session)
     stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, close_friend_user.id)
     await follow_service.follow_user(
         db_session, follower_id=close_friend_user.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=close_friend_user.id
     )
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -198,11 +211,13 @@ async def test_get_checkin_reveals_close_friends_checkin_only_to_close_friends(
         visibility=Visibility.CLOSE_FRIENDS,
     )
 
+    await set_current_user_identity(db_session, close_friend_user.id)
     fetched = await checkin_service.get_checkin(
         db_session, checkin.id, viewer=close_friend_user
     )
     assert fetched.id == checkin.id
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.get_checkin(db_session, checkin.id, viewer=stranger)
 
@@ -213,6 +228,7 @@ async def test_list_checkins_for_venue_filters_private_checkins(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -238,12 +254,14 @@ async def test_list_checkins_for_venue_filters_private_checkins(
         visibility=Visibility.PRIVATE,
     )
 
+    await set_current_user_identity(db_session, other_user.id)
     as_stranger = await checkin_service.list_checkins_for_venue(
         db_session, venue.id, viewer=other_user, limit=20, offset=0
     )
     assert all(c.id != private_checkin.id for c in as_stranger)
     assert len(as_stranger) == 1
 
+    await set_current_user_identity(db_session, owner.id)
     as_owner = await checkin_service.list_checkins_for_venue(
         db_session, venue.id, viewer=owner, limit=20, offset=0
     )
@@ -257,6 +275,7 @@ async def test_list_checkins_for_user_filters_private_checkins(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -270,9 +289,11 @@ async def test_list_checkins_for_user_filters_private_checkins(
         visibility=Visibility.PRIVATE,
     )
 
+    await set_current_user_identity(db_session, other_user.id)
     as_stranger = await checkin_service.list_checkins_for_user(
         db_session, owner.id, viewer=other_user, limit=20, offset=0
     )
+    await set_current_user_identity(db_session, owner.id)
     as_owner = await checkin_service.list_checkins_for_user(
         db_session, owner.id, viewer=owner, limit=20, offset=0
     )
@@ -286,6 +307,7 @@ async def test_update_checkin_persists_changes_for_the_owner(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -309,6 +331,7 @@ async def test_update_checkin_raises_for_non_owner(db_session: AsyncSession) -> 
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -321,6 +344,7 @@ async def test_update_checkin_raises_for_non_owner(db_session: AsyncSession) -> 
         visited_tz=_TZ,
     )
 
+    await set_current_user_identity(db_session, other_user.id)
     with pytest.raises(NotCheckinOwnerError):
         await checkin_service.update_checkin(
             db_session,
@@ -341,6 +365,7 @@ async def test_update_checkin_by_non_owner_on_a_private_checkin_returns_not_foun
     owner = await _create_user(db_session)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -354,6 +379,7 @@ async def test_update_checkin_by_non_owner_on_a_private_checkin_returns_not_foun
         visibility=Visibility.PRIVATE,
     )
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.update_checkin(
             db_session, checkin.id, current_user=stranger, updates={"note": "x"}
@@ -365,6 +391,7 @@ async def test_soft_delete_excludes_checkin_from_listings_and_lookup(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -399,6 +426,7 @@ async def test_hard_delete_removes_the_row_entirely(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
@@ -425,6 +453,7 @@ async def test_hard_delete_can_purge_an_already_soft_deleted_checkin(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,

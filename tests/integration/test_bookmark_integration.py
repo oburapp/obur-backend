@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.core.visibility import Visibility
 from app.exceptions import (
     BookmarkNotFoundError,
@@ -44,6 +45,11 @@ async def _create_user(session: AsyncSession) -> User:
 async def _create_checkin(
     session: AsyncSession, owner: User, *, visibility: str = Visibility.PUBLIC
 ):
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7). Callers already set `owner`'s identity
+    # before this point in practice, but set it explicitly here too
+    # rather than relying on that.
+    await set_current_user_identity(session, owner.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -69,9 +75,11 @@ async def _create_checkin(
 
 async def test_bookmark_checkin_is_idempotent(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     checkin = await _create_checkin(db_session, owner)
 
+    await set_current_user_identity(db_session, bookmarker.id)
     first = await bookmark_service.bookmark_checkin(
         db_session, checkin.id, current_user=bookmarker
     )
@@ -84,6 +92,7 @@ async def test_bookmark_checkin_is_idempotent(db_session: AsyncSession) -> None:
 
 async def test_bookmark_checkin_raises_when_invisible(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     checkin = await _create_checkin(db_session, owner, visibility=Visibility.PRIVATE)
 
@@ -97,6 +106,7 @@ async def test_unbookmark_checkin_raises_when_never_bookmarked(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     other_user = await _create_user(db_session)
     checkin = await _create_checkin(db_session, owner)
 
@@ -116,12 +126,15 @@ async def test_bookmarked_checkin_made_private_later_drops_out_of_the_list(
     would still leak through the bookmarker's own bookmark list.
     """
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     checkin = await _create_checkin(db_session, owner, visibility=Visibility.PUBLIC)
+    await set_current_user_identity(db_session, bookmarker.id)
     await bookmark_service.bookmark_checkin(
         db_session, checkin.id, current_user=bookmarker
     )
 
+    await set_current_user_identity(db_session, owner.id)
     await checkin_service.update_checkin(
         db_session,
         checkin.id,
@@ -129,6 +142,7 @@ async def test_bookmarked_checkin_made_private_later_drops_out_of_the_list(
         updates={"visibility": Visibility.PRIVATE},
     )
 
+    await set_current_user_identity(db_session, bookmarker.id)
     remaining = await bookmark_service.list_bookmarked_checkins(
         db_session, bookmarker.id, limit=20, offset=0
     )
@@ -139,16 +153,20 @@ async def test_bookmarked_checkin_soft_deleted_later_drops_out_of_the_list(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     checkin = await _create_checkin(db_session, owner)
+    await set_current_user_identity(db_session, bookmarker.id)
     await bookmark_service.bookmark_checkin(
         db_session, checkin.id, current_user=bookmarker
     )
 
+    await set_current_user_identity(db_session, owner.id)
     await checkin_service.soft_delete_checkin(
         db_session, checkin.id, current_user=owner
     )
 
+    await set_current_user_identity(db_session, bookmarker.id)
     remaining = await bookmark_service.list_bookmarked_checkins(
         db_session, bookmarker.id, limit=20, offset=0
     )
@@ -162,6 +180,7 @@ async def test_owner_still_sees_their_own_bookmarked_private_checkin(
     own content from themselves.
     """
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await _create_checkin(db_session, owner, visibility=Visibility.PRIVATE)
     await bookmark_service.bookmark_checkin(db_session, checkin.id, current_user=owner)
 
@@ -173,6 +192,7 @@ async def test_owner_still_sees_their_own_bookmarked_private_checkin(
 
 async def test_bookmark_list_raises_when_invisible(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Özel", visibility=Visibility.PRIVATE
@@ -186,11 +206,13 @@ async def test_bookmark_list_raises_when_invisible(db_session: AsyncSession) -> 
 
 async def test_bookmark_list_is_idempotent(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
 
+    await set_current_user_identity(db_session, bookmarker.id)
     first = await bookmark_service.bookmark_list(
         db_session, venue_list.id, current_user=bookmarker
     )
@@ -205,6 +227,7 @@ async def test_unbookmark_list_raises_when_never_bookmarked(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     other_user = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
@@ -220,10 +243,12 @@ async def test_unbookmark_list_removes_it_from_the_bookmark_list(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
+    await set_current_user_identity(db_session, bookmarker.id)
     await bookmark_service.bookmark_list(
         db_session, venue_list.id, current_user=bookmarker
     )
@@ -242,14 +267,17 @@ async def test_bookmarked_list_made_private_later_drops_out_of_the_list(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste", visibility=Visibility.PUBLIC
     )
+    await set_current_user_identity(db_session, bookmarker.id)
     await bookmark_service.bookmark_list(
         db_session, venue_list.id, current_user=bookmarker
     )
 
+    await set_current_user_identity(db_session, owner.id)
     await list_service.update_list(
         db_session,
         venue_list.id,
@@ -257,6 +285,7 @@ async def test_bookmarked_list_made_private_later_drops_out_of_the_list(
         updates={"visibility": Visibility.PRIVATE},
     )
 
+    await set_current_user_identity(db_session, bookmarker.id)
     remaining = await bookmark_service.list_bookmarked_lists(
         db_session, bookmarker.id, limit=20, offset=0
     )
@@ -267,14 +296,17 @@ async def test_list_bookmark_cascades_away_when_list_is_hard_deleted(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     bookmarker = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
+    await set_current_user_identity(db_session, bookmarker.id)
     await bookmark_service.bookmark_list(
         db_session, venue_list.id, current_user=bookmarker
     )
 
+    await set_current_user_identity(db_session, owner.id)
     await list_service.delete_list(db_session, venue_list.id, current_user=owner)
 
     result = await db_session.execute(

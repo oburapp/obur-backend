@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.exceptions import CloseFriendNotFoundError, NotAFollowerError
 from app.models.user import User
 from app.services import close_friend as close_friend_service
@@ -43,9 +44,11 @@ async def test_add_close_friend_succeeds_for_a_current_follower(
 ) -> None:
     owner = await _create_user(db_session)
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
 
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=follower.id
@@ -60,9 +63,11 @@ async def test_add_close_friend_succeeds_for_a_current_follower(
 async def test_add_close_friend_is_idempotent(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
 
     first = await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=follower.id
@@ -91,9 +96,11 @@ async def test_remove_close_friend_removes_the_relationship(
 ) -> None:
     owner = await _create_user(db_session)
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=follower.id
     )
@@ -118,9 +125,11 @@ async def test_unfollow_cascades_removal_from_close_friends(
     """
     owner = await _create_user(db_session)
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=follower.id
     )
@@ -142,13 +151,19 @@ async def test_close_friend_status_is_not_symmetric(db_session: AsyncSession) ->
     """
     owner = await _create_user(db_session)
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=follower.id
     )
 
+    # Switch to follower's own identity for this check: otherwise an
+    # empty result would be ambiguous, is it really asymmetric, or is
+    # `owner`'s identity just not allowed to see follower's list at all?
+    await set_current_user_identity(db_session, follower.id)
     reverse_direction = await close_friend_service.list_close_friends(
         db_session, follower.id, limit=20, offset=0
     )

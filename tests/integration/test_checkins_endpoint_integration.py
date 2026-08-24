@@ -10,11 +10,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
+from app.core.database import set_current_user_identity
 from app.main import app
 from app.models.user import User
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
-from tests.integration.conftest import QueryCounter
+from tests.integration.conftest import QueryCounter, override_current_user
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
@@ -32,6 +33,9 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, owner: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, owner.id)
     venue = Venue(
         name="Kadıköy Kahve Durağı",
         lat=40.9905,
@@ -49,7 +53,7 @@ async def test_create_checkin_then_fetch_it_by_id(
 ) -> None:
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         create_response = await client_with_db_session.post(
@@ -82,7 +86,7 @@ async def test_create_checkin_returns_422_for_future_visit_date(
 ) -> None:
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         response = await client_with_db_session.post(
@@ -109,7 +113,9 @@ async def test_private_checkin_is_hidden_from_other_users_over_http(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         create_response = await client_with_db_session.post(
@@ -137,7 +143,9 @@ async def test_private_checkin_is_hidden_from_other_users_over_http(
     )
     assert anonymous_response.status_code == 404
 
-    app.dependency_overrides[get_optional_current_user] = lambda: other_user
+    app.dependency_overrides[get_optional_current_user] = override_current_user(
+        other_user, db_session
+    )
     try:
         other_user_response = await client_with_db_session.get(
             f"/api/v1/checkins/{checkin_id}"
@@ -146,7 +154,9 @@ async def test_private_checkin_is_hidden_from_other_users_over_http(
         del app.dependency_overrides[get_optional_current_user]
     assert other_user_response.status_code == 404
 
-    app.dependency_overrides[get_optional_current_user] = lambda: owner
+    app.dependency_overrides[get_optional_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         owner_response = await client_with_db_session.get(
             f"/api/v1/checkins/{checkin_id}"
@@ -161,7 +171,9 @@ async def test_owner_can_soft_delete_but_not_hard_delete_via_regular_endpoint(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         create_response = await client_with_db_session.post(
@@ -195,7 +207,9 @@ async def test_regular_user_cannot_purge_a_checkin(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         create_response = await client_with_db_session.post(
@@ -232,7 +246,9 @@ async def test_listing_venue_checkins_does_not_scale_query_count_with_result_siz
     """
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     async def _create_checkin() -> None:
         response = await client_with_db_session.post(

@@ -1,8 +1,9 @@
 """Fixtures specific to integration tests."""
 
 import asyncio
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Coroutine, Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
@@ -12,8 +13,9 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
-from app.core.database import engine, get_session
+from app.core.database import engine, get_session, set_current_user_identity
 from app.main import app
+from app.models.user import User
 from app.seeds.runner import seed_catalog
 
 _ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
@@ -116,6 +118,29 @@ def query_counter(db_session: AsyncSession) -> Generator[QueryCounter, None, Non
         yield counter
     finally:
         event.remove(sync_connection, "before_cursor_execute", counter._on_execute)
+
+
+def override_current_user(
+    user: User, session: AsyncSession
+) -> Callable[[], Coroutine[Any, Any, User]]:
+    """Replacement for `app.dependency_overrides[get_current_user] = lambda:
+    user`, needed by every test that touches an RLS-protected table
+    (`checkins`, `lists`, `venue_saves` so far, ADR-0016 in obur-docs).
+
+    A bare lambda skips `get_current_user`'s own body entirely, including
+    the `set_current_user_identity` call it makes on a real request, so
+    RLS would (correctly) treat the request as coming from nobody, and
+    reject any write the test expects to succeed. This applies the same
+    identity to the same session `client_with_db_session` already shares
+    with the test, then returns `user`, matching what the real dependency
+    does for every request.
+    """
+
+    async def _override() -> User:
+        await set_current_user_identity(session, user.id)
+        return user
+
+    return _override
 
 
 @pytest.fixture

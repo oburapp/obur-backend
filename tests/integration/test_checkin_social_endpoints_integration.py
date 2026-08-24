@@ -9,10 +9,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.database import set_current_user_identity
 from app.main import app
 from app.models.user import User
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
+from tests.integration.conftest import override_current_user
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
@@ -30,6 +32,9 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, owner: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, owner.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -64,13 +69,17 @@ async def test_like_then_unlike_a_checkin_over_http(
     owner = await _create_user(db_session)
     liker = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         checkin_id = await _create_checkin_id(client_with_db_session, venue)
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: liker
+    app.dependency_overrides[get_current_user] = override_current_user(
+        liker, db_session
+    )
     try:
         like_response = await client_with_db_session.post(
             f"/api/v1/checkins/{checkin_id}/like"
@@ -95,7 +104,9 @@ async def test_liking_a_private_checkin_returns_404_over_http(
     owner = await _create_user(db_session)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         create_response = await client_with_db_session.post(
             "/api/v1/checkins",
@@ -114,7 +125,9 @@ async def test_liking_a_private_checkin_returns_404_over_http(
         del app.dependency_overrides[get_current_user]
     checkin_id = create_response.json()["id"]
 
-    app.dependency_overrides[get_current_user] = lambda: stranger
+    app.dependency_overrides[get_current_user] = override_current_user(
+        stranger, db_session
+    )
     try:
         response = await client_with_db_session.post(
             f"/api/v1/checkins/{checkin_id}/like"
@@ -131,13 +144,17 @@ async def test_bookmark_then_unbookmark_a_checkin_over_http(
     owner = await _create_user(db_session)
     bookmarker = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         checkin_id = await _create_checkin_id(client_with_db_session, venue)
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: bookmarker
+    app.dependency_overrides[get_current_user] = override_current_user(
+        bookmarker, db_session
+    )
     try:
         bookmark_response = await client_with_db_session.post(
             f"/api/v1/checkins/{checkin_id}/bookmark"

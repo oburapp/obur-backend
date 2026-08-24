@@ -13,10 +13,11 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.models.checkin import Checkin
 from app.models.follow import Follow
 from app.models.list import List
-from app.models.user import User, UserStatus
+from app.models.user import User, UserRole, UserStatus
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
 from app.services import checkin as checkin_service
@@ -43,6 +44,9 @@ async def _create_user(session: AsyncSession, **overrides: object) -> User:
 
 
 async def _create_venue(session: AsyncSession, owner: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, owner.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -78,6 +82,7 @@ async def test_deleting_an_account_purges_its_content(
     """
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     checkin = await _create_checkin(db_session, owner, venue)
     created_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Kahveciler"
@@ -120,6 +125,7 @@ async def test_a_frozen_users_checkins_drop_out_of_a_venue_listing(
     owner = await _create_user(db_session)
     viewer = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
+    await set_current_user_identity(db_session, owner.id)
     await _create_checkin(db_session, owner, venue)
 
     before = await checkin_service.list_checkins_for_venue(
@@ -140,6 +146,8 @@ async def test_a_suspended_user_drops_out_of_a_followers_listing(
 ) -> None:
     target = await _create_user(db_session)
     follower = await _create_user(db_session)
+    admin = await _create_user(db_session, role=UserRole.ADMIN)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=target.id
     )
@@ -149,6 +157,10 @@ async def test_a_suspended_user_drops_out_of_a_followers_listing(
     )
     assert [user.id for user in before] == [follower.id]
 
+    # Suspension is admin-only (app/models/user.py's own UserStatus
+    # docstring), never self-service, so this uses admin's identity, not
+    # follower's own.
+    await set_current_user_identity(db_session, admin.id)
     follower.status = UserStatus.SUSPENDED
     await db_session.commit()
 
@@ -167,10 +179,13 @@ async def test_the_follow_row_survives_a_suspension(
     """
     target = await _create_user(db_session)
     follower = await _create_user(db_session)
+    admin = await _create_user(db_session, role=UserRole.ADMIN)
+    await set_current_user_identity(db_session, follower.id)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=target.id
     )
 
+    await set_current_user_identity(db_session, admin.id)
     follower.status = UserStatus.SUSPENDED
     await db_session.commit()
 

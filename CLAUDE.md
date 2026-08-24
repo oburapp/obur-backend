@@ -187,6 +187,14 @@ except:
     setup-db` — since a migrated-but-unseeded database has no venue
     categories and `VENUE.category_id` is `NOT NULL`. The seeder is never
     invoked from application startup (it would race across instances).
+  - **Row Level Security policy DDL (`CREATE POLICY`,
+    `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`) is written via
+    `op.execute()` in a migration.** Alembic's autogenerate has no native
+    representation for policies, so this is the same kind of exception
+    already granted to PostGIS-specific queries (see Forbidden, below),
+    not a general license for raw SQL elsewhere. See
+    [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md)
+    in obur-docs.
 
 ---
 
@@ -388,7 +396,7 @@ async def test_checkin(): ...
 - `TODO` comments
 - Hardcoded URLs, ports, or credentials
 - `assert` for runtime validation in production code
-- Raw SQL outside of PostGIS-specific queries (and even then, use SQLAlchemy `text()` with bound parameters)
+- Raw SQL outside of PostGIS-specific queries and RLS policy DDL in migrations (and even then, use SQLAlchemy `text()` with bound parameters, or `op.execute()` for policy DDL, see [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md))
 - Committing `.env` or any file containing secrets
 - Returning ORM objects directly from endpoints
 - Unbounded DB queries without pagination

@@ -61,7 +61,10 @@ async def test_get_current_user_resolves_race_on_integrity_error(
     first_result.scalar_one_or_none.return_value = None
     second_result = MagicMock()
     second_result.scalar_one_or_none.return_value = winner
-    session.execute.side_effect = [first_result, second_result]
+    # Third value is for the `SET LOCAL` call `set_current_user_identity`
+    # (ADR-0016) makes once `winner` is resolved, its result is never
+    # read, so a bare `MagicMock()` placeholder is enough.
+    session.execute.side_effect = [first_result, second_result, MagicMock()]
     session.commit.side_effect = IntegrityError("stmt", {}, Exception("duplicate"))
 
     result = await get_current_user(MagicMock(), session)

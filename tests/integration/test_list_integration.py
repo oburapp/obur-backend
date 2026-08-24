@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.core.visibility import Visibility
 from app.exceptions import (
     DuplicateListItemError,
@@ -44,6 +45,9 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, added_by: User, *, name: str) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, added_by.id)
     venue = Venue(
         name=name,
         lat=41.0,
@@ -58,6 +62,7 @@ async def _create_venue(session: AsyncSession, added_by: User, *, name: str) -> 
 
 async def test_create_list_defaults_to_public(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Kahveciler"
@@ -70,14 +75,17 @@ async def test_get_list_hides_private_list_from_other_users(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     other_user = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Gizli liste", visibility=Visibility.PRIVATE
     )
 
+    await set_current_user_identity(db_session, other_user.id)
     with pytest.raises(ListNotFoundError):
         await list_service.get_list(db_session, venue_list.id, viewer=other_user)
 
+    await set_current_user_identity(db_session, owner.id)
     fetched = await list_service.get_list(db_session, venue_list.id, viewer=owner)
     assert fetched.id == venue_list.id
 
@@ -86,11 +94,14 @@ async def test_get_list_reveals_close_friends_list_only_to_close_friends(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     close_friend_user = await _create_user(db_session)
     stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, close_friend_user.id)
     await follow_service.follow_user(
         db_session, follower_id=close_friend_user.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=close_friend_user.id
     )
@@ -101,17 +112,20 @@ async def test_get_list_reveals_close_friends_list_only_to_close_friends(
         visibility=Visibility.CLOSE_FRIENDS,
     )
 
+    await set_current_user_identity(db_session, close_friend_user.id)
     visible = await list_service.get_list(
         db_session, venue_list.id, viewer=close_friend_user
     )
     assert visible.id == venue_list.id
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(ListNotFoundError):
         await list_service.get_list(db_session, venue_list.id, viewer=stranger)
 
 
 async def test_get_list_raises_when_it_does_not_exist(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(ListNotFoundError):
         await list_service.get_list(db_session, uuid4(), viewer=owner)
@@ -121,6 +135,7 @@ async def test_update_list_persists_changes_for_the_owner(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -136,6 +151,7 @@ async def test_update_list_raises_when_it_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(ListNotFoundError):
         await list_service.update_list(
@@ -147,6 +163,7 @@ async def test_delete_list_raises_when_it_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(ListNotFoundError):
         await list_service.delete_list(db_session, uuid4(), current_user=owner)
@@ -156,6 +173,7 @@ async def test_add_list_item_raises_when_list_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner, name="Mekan")
 
     with pytest.raises(ListNotFoundError):
@@ -168,6 +186,7 @@ async def test_move_list_item_raises_when_list_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(ListNotFoundError):
         await list_item_service.move_list_item(
@@ -179,6 +198,7 @@ async def test_move_list_item_raises_when_item_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -193,6 +213,7 @@ async def test_remove_list_item_raises_when_list_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(ListNotFoundError):
         await list_item_service.remove_list_item(
@@ -202,11 +223,13 @@ async def test_remove_list_item_raises_when_list_does_not_exist(
 
 async def test_update_list_raises_for_non_owner(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(NotListOwnerError):
         await list_service.update_list(
             db_session, venue_list.id, current_user=stranger, updates={"title": "x"}
@@ -215,6 +238,7 @@ async def test_update_list_raises_for_non_owner(db_session: AsyncSession) -> Non
 
 async def test_delete_list_cascades_to_its_items(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner, name="Mekan A")
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
@@ -233,6 +257,7 @@ async def test_add_list_item_raises_when_venue_missing(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -247,6 +272,7 @@ async def test_add_list_item_raises_on_duplicate_venue(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner, name="Mekan A")
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
@@ -265,6 +291,7 @@ async def test_add_list_item_appends_to_the_end_by_default(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -289,6 +316,7 @@ async def test_add_list_item_inserts_after_a_given_item(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -318,6 +346,7 @@ async def test_add_list_item_inserts_after_a_given_item(
 
 async def test_move_list_item_to_the_very_start(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -345,6 +374,7 @@ async def test_move_list_item_raises_when_after_item_belongs_to_another_list(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     list_a = await list_service.create_list(db_session, user_id=owner.id, title="A")
     list_b = await list_service.create_list(db_session, user_id=owner.id, title="B")
     venue_a = await _create_venue(db_session, owner, name="A")
@@ -370,6 +400,7 @@ async def test_remove_list_item_raises_for_an_item_not_on_this_list(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -384,6 +415,7 @@ async def test_remove_list_item_removes_it_and_preserves_remaining_order(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -417,6 +449,7 @@ async def test_repeated_drag_to_front_ends_in_exact_reverse_insertion_order(
     after repeated inserts-before-the-current-first-item.
     """
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue_list = await list_service.create_list(
         db_session, user_id=owner.id, title="Liste"
     )
@@ -444,11 +477,14 @@ async def test_list_lists_for_user_excludes_close_friends_list_from_a_non_close_
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     close_friend_user = await _create_user(db_session)
     stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, close_friend_user.id)
     await follow_service.follow_user(
         db_session, follower_id=close_friend_user.id, following_id=owner.id
     )
+    await set_current_user_identity(db_session, owner.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner.id, friend_id=close_friend_user.id
     )
@@ -462,9 +498,11 @@ async def test_list_lists_for_user_excludes_close_friends_list_from_a_non_close_
         visibility=Visibility.CLOSE_FRIENDS,
     )
 
+    await set_current_user_identity(db_session, close_friend_user.id)
     as_close_friend = await list_service.list_lists_for_user(
         db_session, owner.id, viewer=close_friend_user, limit=20, offset=0
     )
+    await set_current_user_identity(db_session, stranger.id)
     as_stranger = await list_service.list_lists_for_user(
         db_session, owner.id, viewer=stranger, limit=20, offset=0
     )
@@ -484,12 +522,15 @@ async def test_list_lists_for_user_close_friend_isolation_across_owners(
     owner_a = await _create_user(db_session)
     owner_b = await _create_user(db_session)
     close_friend_of_a = await _create_user(db_session)
+    await set_current_user_identity(db_session, close_friend_of_a.id)
     await follow_service.follow_user(
         db_session, follower_id=close_friend_of_a.id, following_id=owner_a.id
     )
+    await set_current_user_identity(db_session, owner_a.id)
     await close_friend_service.add_close_friend(
         db_session, user_id=owner_a.id, friend_id=close_friend_of_a.id
     )
+    await set_current_user_identity(db_session, owner_b.id)
     await list_service.create_list(
         db_session,
         user_id=owner_b.id,
@@ -497,6 +538,7 @@ async def test_list_lists_for_user_close_friend_isolation_across_owners(
         visibility=Visibility.CLOSE_FRIENDS,
     )
 
+    await set_current_user_identity(db_session, close_friend_of_a.id)
     b_lists_as_seen_by_a_close_friend = await list_service.list_lists_for_user(
         db_session, owner_b.id, viewer=close_friend_of_a, limit=20, offset=0
     )

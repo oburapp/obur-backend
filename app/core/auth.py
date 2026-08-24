@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import problems
-from app.core.database import get_session
+from app.core.database import get_session, set_current_user_identity
 from app.core.problems import ProblemError
 from app.core.security import verify_session
 from app.core.user_identity import fallback_username
@@ -50,6 +50,14 @@ async def get_current_user(
     # they are known (app/middleware/rate_limit.py). Set here because this is
     # the one place every authenticated request passes through.
     request.state.user_id = user.id
+
+    # Same reasoning, for Row Level Security (ADR-0016 in obur-docs): this
+    # is the one place every authenticated request passes through, and the
+    # earliest point the caller's id is actually known. `_resolve_user`
+    # above may already have run a query (and, on the JIT-creation path, a
+    # commit) before this line, so RLS's per-transaction identity can only
+    # be applied starting here, not any earlier.
+    await set_current_user_identity(session, user.id)
     return user
 
 

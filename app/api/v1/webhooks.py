@@ -4,13 +4,13 @@ fallback for the race where a request arrives before a webhook does.
 """
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from svix.webhooks import Webhook, WebhookVerificationError
 
 from app.core.config import get_settings
-from app.core.database import get_session
+from app.core.database import get_session, set_current_user_identity
 from app.core.user_identity import default_display_name, fallback_username
 from app.exceptions import InvalidWebhookSignatureError
 from app.models.user import User
@@ -49,7 +49,27 @@ async def _upsert_user(session: AsyncSession, data: ClerkUserData) -> None:
     user made here. Provider-owned fields — `email` and `avatar_url` —
     keep syncing on every event, which is the reason this webhook exists
     at all.
+
+    Looks the row up first, not only to decide insert vs. update: RLS's
+    `users` UPDATE policy (see ADR-0016 in obur-docs) requires the
+    caller's identity to match the row being touched, and a webhook
+    connection never runs `app.core.auth` (no session token, no
+    `get_current_user`), so nothing sets that identity otherwise. The
+    Svix signature already verified above is what actually authorizes
+    this write; this states explicitly which already-verified user it's
+    for, once one exists to state. A fresh `user.created` has no
+    existing row yet, so there's nothing to set identity to, and none is
+    needed, the INSERT policy only requires being authenticated at all,
+    which the signature check already established.
     """
+    existing_id = await session.scalar(
+        select(User.id).where(
+            User.auth_provider == _AUTH_PROVIDER, User.auth_provider_id == data.id
+        )
+    )
+    if existing_id is not None:
+        await set_current_user_identity(session, existing_id)
+
     username = data.username or fallback_username(_AUTH_PROVIDER, data.id)
     stmt = pg_insert(User).values(
         auth_provider=_AUTH_PROVIDER,
@@ -86,13 +106,25 @@ async def _delete_user(session: AsyncSession, auth_provider_id: str) -> None:
     This is the one deliberate exception to "historical data is never
     deleted" (PDD §7): once someone asks to be forgotten, the data goes,
     not just its attribution.
+
+    Looks the row up first for the same reason `_upsert_user` does: RLS's
+    `users` DELETE policy needs the caller's identity to match the row
+    being deleted, and this connection never runs `get_current_user`. A
+    retried `user.deleted` event (Clerk retries on failure) for an
+    already-purged account is a no-op, not an error, matching the plain
+    `DELETE`'s own prior behaviour when nothing matched.
     """
-    await session.execute(
-        delete(User).where(
+    target_id = await session.scalar(
+        select(User.id).where(
             User.auth_provider == _AUTH_PROVIDER,
             User.auth_provider_id == auth_provider_id,
         )
     )
+    if target_id is None:
+        return
+
+    await set_current_user_identity(session, target_id)
+    await session.execute(delete(User).where(User.id == target_id))
     await session.commit()
 
 

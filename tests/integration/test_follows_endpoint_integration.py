@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.main import app
 from app.models.user import User
+from tests.integration.conftest import override_current_user
 
 
 async def _create_user(session: AsyncSession) -> User:
@@ -29,7 +30,9 @@ async def test_follow_then_appear_in_followers_over_http(
 ) -> None:
     follower = await _create_user(db_session)
     followee = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: follower
+    app.dependency_overrides[get_current_user] = override_current_user(
+        follower, db_session
+    )
 
     try:
         follow_response = await client_with_db_session.post(
@@ -53,7 +56,7 @@ async def test_self_follow_returns_422_over_http(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         response = await client_with_db_session.post(f"/api/v1/users/{user.id}/follow")
@@ -68,7 +71,9 @@ async def test_unfollow_without_following_returns_404_over_http(
 ) -> None:
     follower = await _create_user(db_session)
     followee = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: follower
+    app.dependency_overrides[get_current_user] = override_current_user(
+        follower, db_session
+    )
 
     try:
         response = await client_with_db_session.delete(
@@ -85,14 +90,18 @@ async def test_remove_follower_over_http(
 ) -> None:
     follower = await _create_user(db_session)
     followee = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: follower
+    app.dependency_overrides[get_current_user] = override_current_user(
+        follower, db_session
+    )
 
     try:
         await client_with_db_session.post(f"/api/v1/users/{followee.id}/follow")
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: followee
+    app.dependency_overrides[get_current_user] = override_current_user(
+        followee, db_session
+    )
     try:
         response = await client_with_db_session.delete(
             f"/api/v1/users/me/followers/{follower.id}"

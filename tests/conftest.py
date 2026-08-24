@@ -21,14 +21,30 @@ _database_url: str = (
     _env_file.get("DATABASE_URL")
     or "postgresql+asyncpg://user:password@localhost:5432/obur"
 )
+# Same role split as production (ADR-0016 in obur-docs): the owner role
+# above runs migrations/seeding even in tests (see
+# tests/integration/conftest.py's `_prepared_test_database`), and this is
+# the application role's connection, the one `app.core.database.engine`
+# (and therefore every test that goes through the real app) actually
+# uses. Fallback mirrors `_database_url`'s: matches docker-compose.yml's
+# own un-overridden defaults plus the role the ADR-0016 migration creates,
+# for a clean checkout with no `.env` yet.
+_app_database_url: str = _env_file.get("APP_DATABASE_URL") or (
+    "postgresql+asyncpg://obur_app:local-dev-only-not-a-real-secret@localhost:5432/obur"
+)
 _redis_url: str = _env_file.get("REDIS_URL") or "redis://localhost:6379/0"
 
 _db_parts = urlsplit(_database_url)
 _test_database_url = urlunsplit(_db_parts._replace(path=f"{_db_parts.path}_test"))
+_app_db_parts = urlsplit(_app_database_url)
+_test_app_database_url = urlunsplit(
+    _app_db_parts._replace(path=f"{_app_db_parts.path}_test")
+)
 _test_redis_url = urlunsplit(urlsplit(_redis_url)._replace(path="/1"))
 
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DATABASE_URL", _test_database_url)
+os.environ.setdefault("APP_DATABASE_URL", _test_app_database_url)
 os.environ.setdefault("REDIS_URL", _test_redis_url)
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 # Never the real secrets from .env — Clerk verification is always mocked
