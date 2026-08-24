@@ -95,7 +95,7 @@ async def test_create_venue_returns_409_with_nearby_venue_id_on_duplicate(
     response = await _post_venue(client)
 
     assert response.status_code == 409
-    assert response.json()["detail"]["nearby_venue_id"] == str(nearby_id)
+    assert response.json()["nearby_venue_id"] == str(nearby_id)
 
 
 async def test_list_venues_returns_venues(

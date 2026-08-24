@@ -121,7 +121,7 @@ async def test_add_item_then_move_it_over_http(
     assert ordered_ids == [item_b.json()["id"], item_a.json()["id"]]
 
 
-async def test_add_duplicate_venue_returns_422_over_http(
+async def test_add_duplicate_venue_returns_409_over_http(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await _create_user(db_session)
@@ -141,7 +141,7 @@ async def test_add_duplicate_venue_returns_422_over_http(
     finally:
         del app.dependency_overrides[get_current_user]
 
-    assert duplicate_response.status_code == 422
+    assert duplicate_response.status_code == 409
 
 
 async def test_like_then_unlike_a_list_over_http(

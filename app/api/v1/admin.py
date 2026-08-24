@@ -6,12 +6,11 @@ in docs/roadmap.md Phase 3).
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import require_admin
 from app.core.database import get_session
-from app.exceptions import CheckinNotFoundError
 from app.models.user import User
 from app.services import checkin as checkin_service
 
@@ -30,9 +29,4 @@ async def purge_checkin(
     actually removes the row — for moderation/takedown cases, not a
     user's routine "remove my own check-in."
     """
-    try:
-        await checkin_service.hard_delete_checkin(session, checkin_id)
-    except CheckinNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Checkin not found"
-        ) from e
+    await checkin_service.hard_delete_checkin(session, checkin_id)

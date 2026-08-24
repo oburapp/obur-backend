@@ -86,7 +86,7 @@ async def test_create_venue_returns_409_when_duplicate_within_50_meters(
         del app.dependency_overrides[get_current_user]
 
     assert second.status_code == 409
-    assert second.json()["detail"]["nearby_venue_id"] == first.json()["id"]
+    assert second.json()["nearby_venue_id"] == first.json()["id"]
 
 
 async def test_search_venues_over_http_finds_turkish_name(

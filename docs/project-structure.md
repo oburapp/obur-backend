@@ -38,12 +38,15 @@ obur-backend/
 │   │   ├── __init__.py
 │   │   ├── auth.py            # current-user dependency, JIT provisioning
 │   │   ├── authz.py           # ownership, admin override, can_view
+│   │   ├── client_ip.py       # X-Forwarded-For resolution (rightmost-ish)
 │   │   ├── config.py          # settings via pydantic-settings
 │   │   ├── database.py        # async engine, session factory
 │   │   ├── geo.py             # SRID and proximity constants
 │   │   ├── i18n.py            # locale constants and Accept-Language parsing
 │   │   ├── locale.py          # this request's locale (needs the viewer)
 │   │   ├── pagination.py      # shared page-size default and ceiling
+│   │   ├── problems.py        # the RFC 9457 problem catalog
+│   │   ├── problem_mapping.py # domain exception -> problem
 │   │   ├── ratings.py         # the shared four-point scale
 │   │   ├── redis.py           # redis client
 │   │   ├── search.py          # trigram search helpers
@@ -71,8 +74,11 @@ obur-backend/
 │   │       ├── __init__.py
 │   │       ├── tr.py          # per-locale display names, one module per language
 │   │       └── en.py
-│   ├── middleware/            # (Phase 7) rate limiting, request id, logging
-│   │   └── __init__.py
+│   ├── middleware/
+│   │   ├── __init__.py
+│   │   ├── rate_limit.py      # per-caller fixed-window counters, two tiers
+│   │   ├── request_context.py # request id, structured request log, latency
+│   │   └── route_match.py     # route templates, matched before the router runs
 │   └── main.py                # FastAPI app, lifespan, middleware registration
 ├── migrations/
 │   ├── versions/
@@ -121,3 +127,18 @@ of them.
 imported and called explicitly by application code; middleware is registered
 once against the app and runs on every request without a caller. Keeping the
 two apart makes it obvious which is which.
+
+**Middleware runs before the router, and that constrains what it can know.**
+`scope["route"]` is empty until Starlette has matched the request, so
+anything deciding per route *in order to refuse* — which rate-limit tier
+applies — cannot read it. `route_match.py` exists for that: it matches the
+path against templates the code declares itself. Reading `scope["route"]`
+there would not raise; it would quietly put every strict route on the
+baseline limit, which is why the templates are pinned to live routes by a
+test.
+
+**Registration order is reversed from execution order.** Starlette runs the
+*last* middleware added as the outermost layer, so `main.py` adds them
+backwards: rate limit, GZip, CORS, request context. Request context ends up
+outermost on purpose — a request the limiter refuses must still get an id
+and still be measured.

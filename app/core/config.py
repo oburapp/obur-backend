@@ -30,6 +30,19 @@ class Settings(BaseSettings):
     # Genuinely consumed now (app/core/security.py) — required as of Phase 1.
     clerk_secret_key: str
 
+    # Keys the anonymous rate-limit counter (app/middleware/rate_limit.py).
+    # Required, and no default: without a secret the derivation is a plain
+    # hash of a space small enough to enumerate exhaustively, which makes the
+    # stored value reversible — see ADR-0014 in obur-docs.
+    rate_limit_secret: str
+
+    # How many reverse proxies sit between the internet and this process, and
+    # therefore how many entries to skip from the right of `X-Forwarded-For`
+    # before the value stops being client-controlled. No default on purpose:
+    # a wrong value disables rate limiting silently rather than failing, so it
+    # has to be stated for each deployment. 0 locally, where nothing proxies.
+    trusted_proxy_count: int
+
     # Not required yet: the webhook endpoint (app/api/v1/webhooks.py) is
     # built and unit-tested, but real Clerk webhook delivery needs a public
     # URL to register in the Clerk Dashboard, which doesn't exist until

@@ -91,9 +91,7 @@ async def update_profile(
         if user.username_changed_at is not None:
             allowed_at = _next_username_change_allowed_at(user.username_changed_at)
             if now < allowed_at:
-                raise UsernameChangedTooRecentlyError(
-                    f"username can be changed again at {allowed_at.isoformat()}"
-                )
+                raise UsernameChangedTooRecentlyError(allowed_at)
         await _ensure_username_available(
             session, username=new_username, current_user_id=user.id
         )
