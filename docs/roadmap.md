@@ -20,9 +20,11 @@ the [PDD Coverage Matrix](#pdd-coverage-matrix) maps every feature-catalog
 row, every table, and every non-functional requirement to a phase or to an
 out-of-scope line.
 
-Version numbering follows the pattern already established (Phase 0 → `0.1.0`,
-Phase 4 → `0.5.0`): each phase is cut as a minor release, `Phase N → 0.(N+1).0`,
-through Phase 17 → `0.18.0`, then `1.0.0` at Phase 18.
+A release is cut when there is something worth releasing, not once per phase.
+Phases are units of work; versions are units of delivery, and tying the two
+together only forces releases nobody needs. The release flow itself is the
+shared one in [obur-docs/CLAUDE.md](https://github.com/oburapp/obur-docs/blob/main/CLAUDE.md#versioning-and-releases).
+`1.0.0` is the exception, and it is pinned to Phase 18 for a reason stated there.
 
 ---
 
@@ -40,8 +42,10 @@ hold for the work it adds:
 
 1. **RLS policy authored for every new table** — or a written justification
    for why that access pattern needs a bypass (platform-wide counts, admin
-   moderation tooling, cross-user ranking). Deciding this while the query is
-   being written is far cheaper than re-auditing later (PDD §17).
+   moderation tooling). Deciding this while the query is being written is far
+   cheaper than re-auditing later (PDD §17). Applies from **Phase 8**, which
+   is where the mechanism lands; there is nothing to author against before
+   the role split exists.
 2. **Every new endpoint declares a rate-limit tier** — baseline, or the
    strict tier for actions where repeated abuse does real damage (PDD §17).
 3. **Every list endpoint is paginated and capped** via
@@ -366,42 +370,81 @@ The mechanisms behind the [Standing Rules](#standing-rules) above, built once
 against the endpoint surface that already exists. From here on, each phase
 applies them rather than deferring them.
 
-- **Row Level Security, retrofitted across the existing tables.** PDD §17
-  names RLS as the concrete second layer behind the governing principle —
-  the only way to reach data is through the application's own authorization
-  logic — and specifically frames it as development-time discipline rather
-  than a retrofit project. Phases 0–4 shipped with none, so a single focused
-  pass is now unavoidable; doing it here rather than later keeps it to one
-  pass. The access patterns that legitimately need to see across users
-  (platform-wide counts, cross-venue ranking, admin moderation tooling) are
-  enumerated explicitly as bypasses, with reasons, rather than discovered one
-  at a time later.
-- **Redis-backed rate limiting** (`app/middleware/`). A baseline tier on
-  every public endpoint, and a strict tier on the four actions PDD §17
-  identifies as doing real damage under repeated abuse: check-in creation
-  (direct aggregate-rating manipulation, an attack on the platform's core
-  credibility), report submission (coordinated false reporting), venue
-  creation (spam venues), and follow. **Read endpoints are rate-limited
-  too** — Discover, search, and venue listing are exactly what a scraper
-  enumerates, and PDD §17's bulk-extraction resistance depends on the
-  combination of a read limit and a capped page size.
-- **Error contract and structured logging.** A request id on every request,
-  one consistent error body shape, no stack traces or internal detail
-  reaching a client, nothing sensitive reaching the logs.
+- **Redis-backed rate limiting** (`app/middleware/`), per
+  [ADR-0014](https://github.com/oburapp/obur-docs/blob/main/adr/0014-rate-limiting-keys-and-ip-minimisation.md).
+  Authenticated callers key on `user_id`, anonymous ones on an HMAC of the
+  client address resolved rightmost-ish from `X-Forwarded-For` — the
+  obvious leftmost reading lets an attacker spoof a fresh key per request
+  and evade the limiter entirely. Fixed-window counter, chosen over a more
+  precise sliding window because address-derived keys let an attacker
+  control key count. Baseline tier on every endpoint; strict tier on
+  check-in creation, report submission, venue creation, and follow. On
+  counter-store failure the tiers diverge: strict fails closed, baseline
+  fails open. Trusted proxy count is configuration with no default and is
+  verified against the real topology in Phase 8.
+- **Error contract**, per
+  [ADR-0015](https://github.com/oburapp/obur-docs/blob/main/adr/0015-error-contract-and-request-correlation.md).
+  RFC 9457 Problem Details on every error path including FastAPI's own
+  validation failures, with `type` as the discriminator — two conditions
+  already share `429` and no other status fits either. `str(exception)`
+  stops reaching responses at roughly fifteen call sites, each of which
+  needs a real user-facing string written for it.
+- **Request correlation and structured logging.** `X-Request-ID` generated
+  per request, echoed back, on every log line; an inbound value is honoured
+  only if it validates, since an unvalidated one is a log-injection vector.
+  JSON logs excluding OWASP's list plus the raw client address and
+  rate-limit key. `traceparent` is deferred with recorded revisit
+  conditions (ADR-0015).
 - **Latency instrumentation.** PDD §17 sets P50 < 200ms / P90 < 500ms /
   P99 < 1s for standard reads, with check-in creation deliberately exempt.
-  A target that isn't measured can't be met, and this is where the
-  measurement comes from.
+  A target that isn't measured can't be met; the duration lands on the log
+  line above, and where those numbers are aggregated is a Phase 8 decision
+  once the platform's own facilities are known.
 - Pagination audit across every existing list endpoint, `GZipMiddleware`,
   and graceful shutdown in `lifespan` (dispose the engine, close HTTP
-  clients).
+  clients). The audit found twelve of thirteen list endpoints already
+  capped; the exception is the category catalog, which is served whole on
+  purpose — it is a tree, and half a tree is a broken picker rather than a
+  shorter list. Its bound is `MAX_CATALOG_SIZE`, enforced by a test, so the
+  exception stays a decision instead of becoming an oversight.
 
 **Why now:** these apply to everything, so they cost the least when the
 endpoint surface is smallest — and every phase after this one inherits them
 for free. Deferring cross-cutting work to a single late phase is precisely
 what produced the drift this roadmap was rewritten to correct.
 
-## Phase 8 — Deployment & Live Environment
+**This phase grew during design, deliberately.** Settling the error
+contract surfaced that ~15 endpoints leak exception text to clients, and
+fixing that is a change to every error path rather than an addition beside
+them. Shipping a contract half the endpoints don't follow would have been
+the cheaper and worse option.
+
+**Two live defects surfaced while building it**, both of the same kind —
+code that read a value which was not there yet, and degraded silently
+rather than failing:
+
+- *The strict rate-limit tier never applied.* The tier was read from
+  `scope["route"]`, which Starlette populates only once the router runs —
+  after all middleware. Every strict route was metered at the baseline
+  600/hour instead of 30, and failed *open* rather than closed when the
+  counter store was unavailable. Routes are now matched against templates
+  the limiter declares itself, pinned to real routes by a test, because the
+  cost of that list drifting is the same silent failure again.
+- *Alembic disabled the application's loggers.* `fileConfig` defaults to
+  `disable_existing_loggers=True`, which is harmless in its own process and
+  not harmless in-process: after the suite migrated, nothing in `app/`
+  logged anything. Both defects argue the same thing — a guardrail that
+  fails quietly is worse than none, because it is believed.
+
+**Moved out of this phase, deliberately:** Row Level Security, to Phase 8.
+It was here on the reasoning that all cross-cutting work belongs together,
+but its first requirement is a database role that isn't the table owner —
+PostgreSQL exempts owners from RLS, so policies written against the current
+single-role setup would silently enforce nothing. That role split is
+deployment configuration, and PDD §17 itself groups RLS with the
+infrastructure isolation layer rather than with application middleware.
+
+## Phase 8 — Deployment & Database Isolation
 
 - `Dockerfile` (part of the target layout, not yet written), Railway service
   plus PostgreSQL and Redis in the same region, and `docs/deployment.md`
@@ -420,6 +463,34 @@ what produced the drift this roadmap was rewritten to correct.
   assumed. Record the answer where the question was asked.
 - Fill in [runbooks/incident-response.md](https://github.com/oburapp/obur-docs/blob/main/runbooks/incident-response.md)
   against the real deployment — it is currently a stub.
+- **Two database roles.** An owner role for migrations and the seeder, and a
+  separate application role the API connects as. This is the prerequisite
+  for everything below it: PostgreSQL exempts a table's owner from that
+  table's row-level policies, so an application connecting as the owner —
+  which is the setup today — would have policies that silently enforce
+  nothing. `FORCE ROW LEVEL SECURITY` on a single role was considered and
+  rejected: it would filter the seeder too, and an owner can turn
+  `row_security` off, meaning a compromised application could disable its
+  own protection.
+- **Row Level Security across every table.** PDD §17 names it as the
+  concrete mechanism for the second layer this phase is otherwise about —
+  the one that survives a query forgetting to call `can_view`, which is the
+  exact failure behind two real bugs already found on this project.
+  Requires, beyond the roles above:
+  - Per-transaction identity. Policies read `current_setting`, so the
+    current user id is set with `SET LOCAL` at the start of every
+    transaction — not once per connection (pooling) and not once per
+    request, since services commit mid-request and a commit ends the
+    transaction the setting was scoped to.
+  - An enumerated bypass list: migrations, the seeder, admin moderation
+    tooling, and Phase 14's platform-wide badge `rarity_pct`.
+  - An ADR covering the cost this accepts. A policy re-expresses `can_view`
+    in SQL, so one rule now has two implementations that can drift from
+    each other — a new version of the very failure RLS exists to catch. The
+    ADR records how they are kept in step.
+  - Test fixtures that create rows directly rather than through services
+    (most of the integration suite) have to run under a role and policy set
+    that permits it, or the suite tests nothing.
 
 **Why now:** two security gaps (the unregistered webhook, the unset `azp`
 check) can only be closed with a live public URL, and the latency targets
@@ -428,327 +499,220 @@ production data yet, so the breaking migrations in later phases still carry
 no migration risk — and every phase from here deploys continuously instead of
 saving up one high-risk cutover at the end.
 
+**Why RLS here rather than earlier:** its prerequisite is a role split,
+which is deployment configuration, and managed Postgres providers differ in
+what role management they permit. Building it against docker-compose and
+then rebuilding it against the real instance is the same work twice, with
+the second attempt the one that can surprise. Doing it here also restores
+the posture PDD §17 actually asked for — every query from Phase 9 onward is
+written with RLS already on, rather than retrofitted again later.
+
+**The cost of this ordering, stated plainly:** there is no second layer
+until this phase lands. Accepted because `can_view` and
+`ensure_visible_and_owned` are centralised and consistently used today, and
+because the alternative is building the mechanism twice.
+
 ## Phase 9 — Venue Discovery Enrichment
 
-Implements ADR-0009 in full, including the `VENUE` drift deliberately held
-back from Phase 5.
+Implements [ADR-0009](https://github.com/oburapp/obur-docs/blob/main/adr/0009-venue-discovery-enrichment.md)
+in full, including the `VENUE` drift held back from Phase 5. That ADR carries
+the reasoning for every item here.
 
-- **`VENUE.district`** (ilçe / sub-city administrative area) — required for
-  every venue created from here on, whichever path created it; nullable only
-  for rows that predate this phase, with no backfill planned. `city` alone
-  cannot express "Kadıköy" as a scope for discovery, rankings, or badges.
-- **`VENUE.status` is replaced by `is_active` and `is_suspended`**, two
-  independent admin-only booleans. `is_active = false` is a closed business:
-  the venue stays fully visible, shown transparently as inactive.
-  `is_suspended = true` is a moderation action: the venue is hidden
-  entirely and its own page returns a generic "not found," never an
-  explanation — the same "hidden must be indistinguishable from nonexistent"
-  standard applied to private check-ins and blocked profiles. `status` also
-  comes off `VenueResponse`, which is a breaking contract change that costs
-  nothing today and would cost real client work after Phase 18.
-- **No venue field is ever directly user-editable**, including by whoever
-  added it. Every correction is report-driven and admin-only (Phase 10),
-  on the abuse precedent recorded in ADR-0009.
-- **`google_places_id` gains a partial unique index** (`WHERE ... IS NOT
-  NULL`) — two venues can no longer carry the same Google identity.
-- **Two-layer duplicate detection in `create_venue`.** An exact
-  `google_places_id` match is a certain duplicate and resolves to the
-  existing venue idempotently, with no prompt and **no** `confirm_duplicate`
-  bypass — there is nothing to confirm. The existing 50m `ST_DWithin` check
-  remains the fallback for everything else and stays user-confirmable.
-- **`VENUE.is_verified`** — cosmetic only, never affecting ranking, search,
-  or discoverability. Set when either `google_places_id` is present and at
-  least `N` distinct users have checked in, or, with no `google_places_id`,
-  at least `M` distinct users have checked in **and** an admin has confirmed
-  it through a new admin-only endpoint. Only `public`, non-soft-deleted
-  check-ins count toward `N`/`M`, the same restriction the aggregate rating
-  applies and for the same reason. Evaluated synchronously as one extra
-  count query during check-in creation; no notification is sent. `N` and `M`
-  are named constants.
+- `VENUE.district`, required for venues created from here on, nullable for
+  earlier rows, no backfill.
+- `VENUE.status` becomes `is_active` + `is_suspended`, both admin-only, and
+  comes off `VenueResponse` — a breaking contract change that costs nothing
+  before a client exists.
+- No venue field is user-editable; corrections are report-driven (Phase 10).
+- `google_places_id` partial unique index, and two-layer duplicate
+  detection: an exact Google match resolves idempotently and cannot be
+  overridden with `confirm_duplicate`.
+- `VENUE.is_verified`, cosmetic only, on named-constant thresholds.
 
-**Why now:** `district` gates Phase 16's district-scoped venue ranking and
-Phase 14's geography-scoped badges. The phase has zero external dependencies
-— the backend never calls Google, it only stores what the client already
-resolved — so it carries none of the risk a real integration would.
+**Why now:** `district` gates Phase 16's district-scoped ranking and Phase
+14's geography badges. Zero external dependencies — the backend never calls
+Google, it stores what the client already resolved.
 
-**Deferred from this phase, on purpose:** a backend-proxied Geocoding
-endpoint (free-text address → approximate coordinate). It is genuinely
-separate work — a new third-party secret, a new outbound HTTP dependency, its
-own failure modes and cost monitoring — and it blocks nothing, since manual
-venue entry works from a map pin. See [Out of Scope](#out-of-scope).
+**Deferred, on purpose:** a backend-proxied Geocoding endpoint. Separate
+work with its own secret and outbound dependency, and it blocks nothing —
+manual venue entry works from a map pin. See [Out of Scope](#out-of-scope).
 
 ## Phase 10 — Safety: Blocking, Mute & Reporting
 
-**Schema defined by ADR-0010 in obur-docs.** Blocking and reporting are both
-P0 and both specified at length in PDD §11, but until ADR-0010 neither had a
-table in PDD §7 or in the ER diagram — the mechanism was fully described in
-prose with no schema anywhere, which is what left this phase with nothing to
-build against. ADR-0010 settled it, along with the matching PDD §7 and ER
-updates: `BLOCK` stores direction and enforces in both, and reports split
-into `CONTENT_REPORT` and `VENUE_REPORT` — two tables by concern rather than
-one polymorphic table or three by target, so `VENUE_REPORT` can keep a real
-foreign key while `CONTENT_REPORT` deliberately doesn't.
+Schema from [ADR-0010](https://github.com/oburapp/obur-docs/blob/main/adr/0010-blocking-and-reporting-schema.md);
+behaviour from PDD §11.
 
-- `BLOCK`, `MUTE`, `CONTENT_REPORT`, and `VENUE_REPORT`, per ADR-0010.
-- **`can_view` gains a blocking dimension.** Blocking overrides all three
-  visibility tiers, `public` included — it is not another tier a viewer can
-  be excluded from. Every listing query written in Phases 3–4 (check-ins,
-  lists, venue saves, bookmarks of either, followers, following,
-  notifications) gains the block filter, reusing the existing
-  `close_friend_of_owner_exists` correlated-subquery pattern so it stays one
-  query rather than a per-row lookup.
-- **Blocking semantics** (PDD §11): auto-unfollow in both directions
-  (`CLOSE_FRIEND` already cascades off `FOLLOW`, so close-friend status is
-  revoked for free); mutual disappearance from search and Discover; silent,
-  with a blocked profile behaving exactly like a nonexistent one;
-  retroactive purge of likes, bookmarks, and notifications between the two
-  people in both directions; and per-viewer anonymization wherever one
-  person's identity would otherwise surface on something the other can see
-  ("first discoverer"), which changes display, not data. Unblocking restores
-  nothing automatically.
-- **Mute**, the lighter counterpart: one-directional, silent, and scoped to
-  feed display only. Not derived from `FOLLOW` — a user can mute someone
-  they don't follow. No retroactive effect of any kind.
-- **Reporting** across three target types — check-in, profile, venue — with
-  interpersonal-safety reasons for the first two and data-quality reasons
-  for the third. Deliberately **no automatic threshold-based hiding**:
-  coordinated false reporting is itself a known abuse vector, and at this
-  scale human review doesn't have a throughput problem.
-- **A real admin moderation surface.** Report queue listing, dismiss, remove
-  content, `USER.status = suspended`, and `VENUE.is_active` /
-  `is_suspended` — the only path by which either venue boolean ever flips.
-  `app/api/v1/admin.py` currently holds a single endpoint; this is where it
-  becomes a moderation surface. Admin access is never affected by a block
-  between two other users.
+- `BLOCK`, `MUTE`, `CONTENT_REPORT`, `VENUE_REPORT`.
+- **`can_view` gains a blocking dimension**, overriding all three visibility
+  tiers including `public`. Every listing query from Phases 3–4 gains the
+  filter, reusing the `close_friend_of_owner_exists` correlated-subquery
+  pattern so it stays one query.
+- Blocking semantics per PDD §11: bidirectional auto-unfollow, mutual
+  disappearance, silent, retroactive purge of likes/bookmarks/notifications,
+  per-viewer anonymisation. Unblocking restores nothing.
+- Mute: one-directional, silent, feed-only, not derived from `FOLLOW`.
+- Reporting on check-in, profile, and venue. No automatic threshold-based
+  hiding — coordinated false reporting is itself an abuse vector.
+- `app/api/v1/admin.py` becomes a real moderation surface: report queue,
+  dismiss, content removal, `USER.status`, both venue booleans.
 
-**Why now:** blocking is a cross-cutting authorization primitive, in the same
-category as visibility. Phase 13's "first discoverer," Phase 16's derived
-venue photo, and Phase 16's feed all have to be viewer-aware. Phase 4's
-`is_public` → `visibility` retrofit was cheap because only Phase 3 existed;
-retrofitting blocking after the read-heavy phases would not be. It is also
-P0 for store review — without a working block and report mechanism the app
-does not clear Apple §1.2 or Google Play's UGC policy.
+**Why now:** blocking is a cross-cutting authorization primitive like
+visibility. Phase 13's first discoverer, Phase 15's signed URLs, and Phase
+16's feed all have to be viewer-aware, and retrofitting after the read-heavy
+phases would not be as cheap as Phase 4's `is_public` → `visibility` was.
+Also P0 for store review (Apple §1.2, Google Play UGC).
 
 ## Phase 11 — Check-in Reliability: Drafts & Idempotency
 
-- **`CHECKIN_DRAFT`** — a separate table, deliberately not an `is_draft` flag
-  on `CHECKIN`. A flag would require every aggregate, badge, and feed query
-  to remember to filter it out forever, and this codebase has already hit
-  that exact failure mode twice. A separate table makes a draft leaking into
-  those queries structurally impossible rather than a matter of discipline.
-  Server-synced, not device-local, so a draft started on mobile resumes on
-  web — the same cross-device standard `NOTIFICATION.read_at` already set.
-- Draft CRUD, and promotion to a real `CHECKIN` on submit, after which the
-  draft row is deleted.
-- **`CHECKIN.idempotency_key`** with `UNIQUE (user_id, idempotency_key)`. A
-  retried submission with the same key returns the original check-in instead
-  of creating a second one — this is what actually prevents a flaky
-  connection from corrupting aggregate ratings and badge counts with
-  duplicates.
-- Nothing partially submitted is ever visible as a real check-in to anyone.
+Both tables are specified in PDD §7, including why a draft is its own table
+rather than a `CHECKIN.is_draft` flag.
 
-**Why now:** PDD §17 classes this as an MVP requirement, not a client-side
-nicety — check-in is the core action, it takes real effort across five steps,
-and venue interiors are exactly where a mobile connection is weakest. The
-mobile client's automatic retry-on-reconnect guarantee rests entirely on the
-idempotency key, so the API side has to exist before client work starts.
+- `CHECKIN_DRAFT` plus CRUD, server-synced so a draft started on mobile
+  resumes on web; promoted to a real `CHECKIN` on submit, then deleted.
+- `CHECKIN.idempotency_key` with `UNIQUE (user_id, idempotency_key)`; a
+  retried submission returns the original rather than creating a second.
+
+**Why now:** PDD §17 classes this as an MVP requirement. The mobile client's
+retry-on-reconnect guarantee rests on the idempotency key, so the API side
+has to exist before client work starts.
 
 ## Phase 12 — Mentions & Hashtags
 
-- **`CHECKIN_MENTION`** — a structured table, not text parsed out of
-  `CHECKIN.note` at render time, so creation, the notification it triggers,
-  and its retroactive purge on blocking can all be enforced the way
-  `CHECKIN_LIKE`'s are. Creatable only between mutual followers: tagging a
-  stranger would reintroduce exactly the unwanted-attention vector the
-  no-comment/no-DM stance exists to avoid. A mention notifies but **never**
-  overrides the check-in's own visibility — extending access that way would
-  be a backdoor around the authorization system kept airtight everywhere
-  else.
-- **`HASHTAG`, `CHECKIN_HASHTAG`, `LIST_HASHTAG`** — free text, no
-  relationship requirement (a hashtag doesn't target a person), capped at 5
-  per check-in or list at the application layer to keep hashtag discovery
-  meaningful.
-- **Turkish-aware normalization of `HASHTAG.tag`**, not a naive lowercase.
-  Turkish's dotted/dotless İ-I distinction means a locale-naive case-fold
-  silently produces two rows for what should be one tag — the same class of
-  subtle text bug that `LIST_ITEM.position`'s `COLLATE "C"` requirement
-  already caught in ADR-0007.
-- A hashtag discovery endpoint listing every `public` check-in and list
-  carrying it, most recent first — the same public-only scoping applied
-  everywhere content is surfaced beyond its original audience.
-- `NotificationType` gains `mention`.
-- No new moderation path for either: an offensive hashtag or mention is part
-  of the check-in or list it's attached to, already reportable as that
-  content (Phase 10).
+- `CHECKIN_MENTION` as a structured table rather than text parsed from
+  `note`, so creation, notification, and block-time purge are enforceable.
+  Mutual-follow only; never overrides visibility.
+- `HASHTAG`, `CHECKIN_HASHTAG`, `LIST_HASHTAG`, five per item.
+- **Turkish-aware normalisation, not `lower()`.** Dotted/dotless İ-I splits
+  one tag across two rows — the same class of bug ADR-0007 found with
+  `COLLATE "C"`.
+- Hashtag discovery over `public` content; `NotificationType` gains
+  `mention`.
 
 **Why now:** the mutual-follow requirement and the block-time purge both
-depend on Phase 10's blocking semantics already existing.
+depend on Phase 10.
 
 ## Phase 13 — Aggregate Scoring & Personalized History
 
-PDD §8 was rewritten twice after the original roadmap line for this phase
-was written — first replacing a band table with a statistical procedure, then
-collapsing to a single level when the product layer was removed (ADR-0011).
-What follows is the current shape, and it is considerably smaller than what
-this phase originally carried.
+The procedure is PDD §8, rewritten twice since the original roadmap line —
+first replacing a band table with a statistical one, then collapsing to a
+single level when [ADR-0011](https://github.com/oburapp/obur-docs/blob/main/adr/0011-drop-product-layer-four-venue-criteria.md)
+removed the product layer.
 
-- **One score, at the venue level.** Pool: every `rating_taste` /
-  `rating_service` / `rating_ambiance` / `rating_value` value from every
-  `public`, non-soft-deleted check-in at that venue. There is no second
-  level and no separate pure-food score — the product-level score and the
-  cross-venue item ranking it sorted both left with the product layer.
-- **The procedure:** below a floor of 10 ratings, no label at all
-  (*New / Low Data*); otherwise a 95% confidence lower bound on the mean,
-  `x̄ − t(0.95, n−1) × (s / √n)`, clipped to [1.0, 4.0], placed in the
-  9-tier symmetric Favorable/Unfavorable band table. Only the label is ever
-  shown — never the raw score or the math — alongside the check-in count
-  behind it.
-- **The four criteria are also exposed individually** on a venue's page. A
-  venue with excellent food and poor value is exactly what a single averaged
-  number hides, and being able to say that is the whole reason four separate
-  criteria exist.
-- **Personalized "best of" history** on a user's own profile: their single
-  highest-rated venue per `VENUE.category_id` ("en iyi dönerci: Develi"). A
-  read query over existing data, no new tables. Unlike everything else in
-  this phase it needs **no volume floor** — it reports the user's own
-  rating, not a platform statistic, so it works from their first check-in.
-  Its specificity depends entirely on how granular Phase 6 left the category
-  catalog.
-- Band cut points and the volume floor are named constants in one place, so
-  PDD §18's calibration item is a value change rather than a code change.
+- One score, at venue level, pooling all four criteria from `public`,
+  non-soft-deleted check-ins. No second level; the product-level score left
+  with the product layer.
+- Below a 10-rating floor, no label. Above it, the 95% confidence lower
+  bound placed in PDD §8's 9-tier band table. Only the label is shown.
+- **The four criteria are also exposed individually** on a venue page — a
+  venue with excellent food and poor value is exactly what one averaged
+  number hides. *No ADR yet; write one when this phase starts.*
+- Personalized "best per category" history on a user's own profile. A read
+  query over existing data, and the only thing here with **no volume floor**
+  — it reports the user's own rating, not a platform statistic.
+- Band cut points and the floor are named constants, so PDD §18's
+  calibration item is a value change.
 
 **Why now:** depends on Phase 5's four required criteria and Phase 6's
-expanded category catalog; Phase 16's Discover ranking consumes the venue
-score.
+expanded catalog; Phase 16's Discover ranking consumes the score.
 
 ## Phase 14 — Badges
 
+Permanence and its architectural consequence — forward-only synchronous
+evaluation, no re-scan job — are settled in PDD §6.
+
 - `BADGE`, `BADGE_TRANSLATION`, `USER_BADGE`, following Phase 6's
   locale-resolution pattern.
-- **Permanent once earned, never automatically revoked**, even if the
-  earning condition later becomes false. A badge documents something that
-  happened, not something currently true. This removes an entire class of
-  architecture: evaluation is **forward-only and synchronous**, checked at
-  the moment an action might newly cross a threshold, with no re-scan job
-  and no queue.
-- Admin-only manual revocation is the single exception, for a badge resting
-  on fraudulent activity.
-- **`rarity_pct` is the one thing that genuinely needs a scheduled job** —
-  it is a percentage over the entire user base, which doesn't recompute
-  per profile view the way a per-check-in threshold check does. This is the
-  only periodic job in the system; its cadence is a named constant.
-- `NotificationType` gains `badge_earned`. The check-in creation response
-  reports any newly earned badge and whether the check-in made its author a
-  venue's first discoverer — PDD §17 reserves celebration for exactly these
-  moments, and the client can only render them if the API says so.
+- Admin-only manual revocation as the single exception, for fraud.
+- `rarity_pct` is the one thing needing a scheduled job, since it is a
+  percentage over the whole user base. The only periodic job in the system;
+  its cadence is a named constant.
+- `NotificationType` gains `badge_earned`; the check-in creation response
+  reports newly earned badges and first-discoverer status, which is what
+  PDD §17's celebration moments need from the API.
 
-**Why now:** built on `visited_at` / `visited_tz` from Phase 3 and `district`
-from Phase 9. The evaluation-trigger architecture is decided here on its own
+**Why now:** built on `visited_at` / `visited_tz` (Phase 3) and `district`
+(Phase 9). The evaluation-trigger architecture is decided here on its own
 terms, across the full variety of badge conditions — deliberately not
-generalized from Phase 9's much narrower check-in-count trigger.
+generalised from Phase 9's much narrower check-in-count trigger.
 
 ## Phase 15 — Media Pipeline
 
-Applies uniformly to the two upload surfaces that exist: `CHECKIN.photo_url`
-and `USER.avatar_url`. A venue has no upload surface, and a list has no cover
-image.
+Applies to the two upload surfaces that exist, `CHECKIN.photo_url` and
+`USER.avatar_url`. A venue has no upload surface, and a list has no cover.
 
-- R2 upload; the `R2_*` settings move from empty-string sentinels to
-  required, in the same change that starts using them.
-- Accepted formats JPEG / PNG / HEIC / WebP, with HEIC converted server-side
-  to a web-standard format; no animated formats.
-- **All EXIF metadata stripped on upload, not just GPS.** Device model,
-  precise timestamps, and other embedded fields are identifying in their own
-  right, and Obur has no use for any of it — only the risk of holding it.
-- **Multiple resolutions generated per upload** (thumbnail / medium / full)
-  rather than one fixed size, with the client requesting what fits its
-  viewport. Avatars are cropped square; check-in photos keep their natural
-  aspect ratio.
-- A server-side hard cap around 15MB, as an abuse and misbehaving-client
-  safety net rather than a size the normal path approaches.
-- **Signed URLs for `close_friends` and `private` check-in photos only**,
-  generated after `can_view` has already passed. A check-in's visibility is
-  enforced on its database row, but the photo lives in R2 — reachable
-  directly if the URL escapes, without passing through any authorization at
-  all. Public photos and avatars are deliberately left unsigned: there is no
-  boundary left to enforce once something is public, and signing would cost
-  real CDN cacheability for nothing gained.
-- Orphaned objects cleaned up when the associated row is deleted.
-- Image processing is CPU-bound and runs via `asyncio.run_in_executor`.
+- R2 upload; `R2_*` settings move from empty-string sentinels to required in
+  the same change that starts using them.
+- JPEG / PNG / HEIC / WebP, HEIC converted server-side, no animated formats;
+  a ~15MB server-side cap as an abuse net.
+- **All EXIF stripped, not just GPS** (PDD §17). Device model and precise
+  timestamps are identifying in their own right.
+- Multiple resolutions per upload; avatars cropped square, check-in photos
+  keeping their aspect ratio.
+- **Signed URLs for `close_friends` and `private` photos only**, generated
+  after `can_view` passes. A check-in's visibility is enforced on its row,
+  but the photo sits in R2 and is reachable directly if the URL escapes.
+  Public photos and avatars stay unsigned — nothing is left to enforce, and
+  signing would cost CDN cacheability for nothing.
+  *No ADR yet; write one when this phase starts.*
+- Orphaned objects cleaned up on row deletion; processing runs via
+  `asyncio.run_in_executor`.
 
 **Why now:** the signed-URL decision depends on Phase 10's completed
-visibility-and-blocking model, and Phase 16's feed and derived venue photo
-consume real uploaded images.
+visibility-and-blocking model, and Phase 16 consumes real uploaded images.
 
 ## Phase 16 — Feed & Discovery
 
-- **Two-layer main feed** (PDD §12). Layer 1 is public check-ins and lists
-  from followed users, chronologically. Layer 2 is algorithmic fill, which
-  engages once Layer 1 falls below a threshold of the feed — the cold-start
-  answer for a new user and the keep-it-alive answer for a user who follows
-  few people. **Both layers take mute and block as query inputs**, not as a
-  filter applied afterward.
-- Layer 2 ranking signals in PDD §12's stated priority order: check-ins
-  at venues whose `VENUE_CATEGORY` this user rates highly, then
-  content from the user's current city, then like count. Algorithmic items
-  are flagged in the response so the client can mark them as suggested.
-- **Discover search across four types** — venue, user, list, and
-  **hashtag**, the last of which the original roadmap's discovery line
-  didn't cover. City filter doubles as travel mode's manual city selector.
-- Discover ranking: aggregate rating, then check-in count, then check-in
-  count among followed users (the "3 friends have been" signal). Among equal
-  ratings, recently logged content ranks higher.
-- **A venue's representative photo is derived, never uploaded** — whichever
-  of its own `public` check-ins currently has the most likes, computed live
-  at read time rather than stored on `VENUE`, so it is always current with no
-  invalidation logic to get wrong. The selection is **per-viewer**: it
-  excludes anyone the viewer has blocked or is blocked by, which naturally
-  surfaces the next-best-liked eligible photo for a blocked pair. Scoped to
-  blocking only, not muting. The photo links through to its source check-in.
-  A venue with no public check-ins simply shows none.
-- "First discoverer" on a venue page, with the same per-viewer
-  anonymization.
+Feed layers, ranking signals, and their priority order are PDD §12.
 
-**Why now:** its ranking signals come from Phase 13, its exclusions from
-Phase 10, and its imagery from Phase 15. This is the most dependency-laden
-surface in the PDD, which is why it is last among the feature phases rather
-than first.
+- Two-layer main feed; Layer 2 engages when Layer 1 falls below a threshold
+  of the feed. **Both layers take mute and block as query inputs**, not as a
+  filter applied afterward. Algorithmic items are flagged in the response.
+- Discover across four types — venue, user, list, and **hashtag**, which the
+  original roadmap's discovery line did not cover. City filter doubles as
+  travel mode's manual selector.
+- Discover ranking per PDD §12, with recency breaking ties.
+- **A venue's representative photo is derived, never uploaded** — its
+  most-liked `public` check-in photo, computed at read time so it is always
+  current with no invalidation to get wrong, and selected **per viewer** so
+  a blocked pair each sees the next eligible photo. Scoped to blocking, not
+  muting. *No ADR yet; write one when this phase starts.*
+- "First discoverer" on a venue page, with the same per-viewer
+  anonymisation.
+
+**Why now:** ranking signals come from Phase 13, exclusions from Phase 10,
+imagery from Phase 15. The most dependency-laden surface in the PDD, which
+is why it is last among the feature phases.
 
 ## Phase 17 — Notification Preferences & PDD Coverage Audit
 
-- **Per-trigger notification opt-out** (new follower, check-in like, list
-  like, badge earned, mention) — storage plus enforcement at every write
-  path that creates a notification. It sits here because every notification
-  type only exists as of Phase 14.
-- **Recent likes activity view** — a user's own like history across
-  check-ins and lists (PDD §5's Settings → Activity).
-- **A full PDD coverage audit.** Every row of §6's feature catalog, every
-  table in §7, and every requirement in §17 is checked against what exists.
-  Anything missing is either built here or moved to
-  [Out of Scope](#out-of-scope) with a written reason — nothing is left
-  silently unaddressed. The [PDD Coverage Matrix](#pdd-coverage-matrix)
-  below is brought to its final state as the output.
+- Per-trigger notification opt-out (follow, check-in like, list like, badge,
+  mention) — storage plus enforcement at every notification write path. It
+  sits here because every type only exists as of Phase 14.
+- Recent likes activity view across check-ins and lists (PDD §5).
+- **A full PDD coverage audit.** Every row of §6, every table in §7, every
+  requirement in §17, checked against what exists. Anything missing is built
+  here or moved to [Out of Scope](#out-of-scope) with a reason. The
+  [PDD Coverage Matrix](#pdd-coverage-matrix) reaches its final state as the
+  output.
 
-**Why now:** this phase is the evidence for this roadmap's central claim —
-that client work can start without anyone needing to come back to the
-backend. That claim is worth auditing deliberately rather than assuming.
+**Why now:** this phase is the evidence for the roadmap's central claim —
+that client work can start without anyone coming back to the backend. Worth
+auditing deliberately rather than assuming.
 
 ## Phase 18 — Release 1.0.0
 
-- Full integration pass across the real surface: auth, check-in creation,
-  venue search, feed, moderation.
-- The 98% coverage bar and the N+1 query-count tests verified across every
-  list endpoint, not just the ones that had them first.
-- `CHANGELOG.md`'s `[Unreleased]` becomes `[1.0.0]`, `pyproject.toml`'s
-  version matches, and the commit is tagged `v1.0.0` — by a human, per the
-  shared release process.
-- What 1.0.0 means here: the API contract is now stable enough for
-  `obur-web` and `obur-mobile` to build against without expecting it to
-  break underneath them.
+- Full integration pass: auth, check-in creation, venue search, feed,
+  moderation.
+- The 98% coverage bar and N+1 query-count tests verified across every list
+  endpoint, not just the ones that had them first.
+- `[Unreleased]` becomes `[1.0.0]`, `pyproject.toml` matches, and a human
+  tags `v1.0.0` per the shared release process.
+- What 1.0.0 means: the API contract is stable enough for `obur-web` and
+  `obur-mobile` to build against.
 
 **Explicitly not in scope:** load and performance testing. The MVP target is
-200 MAU; at that scale there is no real traffic pattern to test against yet.
-Revisit if that target changes.
+200 MAU; there is no real traffic pattern to test against yet. Revisit if
+that target changes.
 
 ---
 
@@ -860,7 +824,7 @@ listing concerns (PDD §11, §18).
 | Fake-account resistance tooling | Out of scope — deferred until abuse is observed |
 | Bulk-extraction resistance | 7 |
 | Signed URLs for private photos | 15 |
-| Governing principle / RLS | 7 + Standing Rules; infrastructure layer in 8 |
+| Governing principle / RLS | 8 (role split, policies, infrastructure layer) + Standing Rules from there on |
 | Photo upload standards | 15 |
 | API latency targets | 7 (instrumentation), 8 (real environment) |
 | Local interaction feedback, celebration | Out of scope — client; badge/first-discoverer payload in 14 |
@@ -873,7 +837,7 @@ listing concerns (PDD §11, §18).
 | Aggregate rating threshold calibration | 13 — named constants, value change not code change |
 | Badge rarity calculation period | 14 |
 | Database encryption at rest / network isolation | 8 |
-| RLS policies, table by table | 7 + Standing Rules |
+| RLS policies, table by table | 8 + Standing Rules from there on |
 | "You Might Like" activation volume | Out of scope — v2.0 |
 | TRY pricing, second-city timing | Out of scope — not engineering work |
 | Meilisearch migration threshold | Out of scope — deferred |
