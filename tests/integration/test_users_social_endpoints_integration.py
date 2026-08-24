@@ -12,11 +12,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.database import set_current_user_identity
 from app.main import app
 from app.models.user import User
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
-from tests.integration.conftest import QueryCounter
+from tests.integration.conftest import QueryCounter, override_current_user
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
@@ -34,6 +35,11 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, owner: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7), so this direct-insert test helper has to
+    # set one, same as the real `POST /api/v1/venues` endpoint would via
+    # `get_current_user`.
+    await set_current_user_identity(session, owner.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -50,7 +56,9 @@ async def test_list_user_lists_over_http(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         await client_with_db_session.post("/api/v1/lists", json={"title": "Liste"})
     finally:
@@ -67,7 +75,9 @@ async def test_list_user_venue_saves_filters_by_type_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         await client_with_db_session.post(
             "/api/v1/venue-saves",
@@ -101,7 +111,9 @@ async def test_list_my_bookmarked_lists_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     bookmarker = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         list_id = (
             await client_with_db_session.post("/api/v1/lists", json={"title": "Liste"})
@@ -109,7 +121,9 @@ async def test_list_my_bookmarked_lists_over_http(
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: bookmarker
+    app.dependency_overrides[get_current_user] = override_current_user(
+        bookmarker, db_session
+    )
     try:
         await client_with_db_session.post(f"/api/v1/lists/{list_id}/bookmark")
         response = await client_with_db_session.get("/api/v1/users/me/bookmarks/lists")
@@ -126,7 +140,9 @@ async def test_list_my_bookmarked_checkins_over_http(
     owner = await _create_user(db_session)
     bookmarker = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         create_response = await client_with_db_session.post(
             "/api/v1/checkins",
@@ -144,7 +160,9 @@ async def test_list_my_bookmarked_checkins_over_http(
         del app.dependency_overrides[get_current_user]
     checkin_id = create_response.json()["id"]
 
-    app.dependency_overrides[get_current_user] = lambda: bookmarker
+    app.dependency_overrides[get_current_user] = override_current_user(
+        bookmarker, db_session
+    )
     try:
         await client_with_db_session.post(f"/api/v1/checkins/{checkin_id}/bookmark")
         response = await client_with_db_session.get(
@@ -172,7 +190,9 @@ async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
     venue = await _create_venue(db_session, owner)
 
     async def _create_and_bookmark_checkin() -> None:
-        app.dependency_overrides[get_current_user] = lambda: owner
+        app.dependency_overrides[get_current_user] = override_current_user(
+            owner, db_session
+        )
         create_response = await client_with_db_session.post(
             "/api/v1/checkins",
             json={
@@ -187,12 +207,16 @@ async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
         )
         checkin_id = create_response.json()["id"]
 
-        app.dependency_overrides[get_current_user] = lambda: bookmarker
+        app.dependency_overrides[get_current_user] = override_current_user(
+            bookmarker, db_session
+        )
         await client_with_db_session.post(f"/api/v1/checkins/{checkin_id}/bookmark")
 
     try:
         await _create_and_bookmark_checkin()
-        app.dependency_overrides[get_current_user] = lambda: bookmarker
+        app.dependency_overrides[get_current_user] = override_current_user(
+            bookmarker, db_session
+        )
         query_counter.reset()
         small_response = await client_with_db_session.get(
             "/api/v1/users/me/bookmarks/checkins"
@@ -202,7 +226,9 @@ async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
         for _ in range(4):
             await _create_and_bookmark_checkin()
 
-        app.dependency_overrides[get_current_user] = lambda: bookmarker
+        app.dependency_overrides[get_current_user] = override_current_user(
+            bookmarker, db_session
+        )
         query_counter.reset()
         large_response = await client_with_db_session.get(
             "/api/v1/users/me/bookmarks/checkins"

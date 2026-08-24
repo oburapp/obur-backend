@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.exceptions import DuplicateVenueNearbyError, VenueCategoryNotFoundError
 from app.models.user import User
 from app.seeds.identity import venue_category_id
@@ -38,6 +39,7 @@ async def test_create_venue_persists_and_is_retrievable(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
 
     venue = await venue_service.create_venue(
         db_session,
@@ -57,6 +59,7 @@ async def test_create_venue_raises_when_category_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
 
     with pytest.raises(VenueCategoryNotFoundError):
         await venue_service.create_venue(
@@ -73,6 +76,7 @@ async def test_create_venue_raises_when_another_venue_is_within_50_meters(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Kadıköy Kahve Durağı",
@@ -98,6 +102,7 @@ async def test_create_venue_succeeds_when_duplicate_is_confirmed(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     first = await venue_service.create_venue(
         db_session,
         name="Kadıköy Kahve Durağı",
@@ -124,6 +129,7 @@ async def test_create_venue_succeeds_when_existing_venue_is_far_away(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Kadıköy Kahve Durağı",
@@ -150,6 +156,7 @@ async def test_search_venues_finds_by_exact_turkish_name(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Kadıköy'de En İyi Döner",
@@ -168,6 +175,7 @@ async def test_search_venues_finds_turkish_name_typed_without_diacritics(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Kadıköy'de En İyi Döner",
@@ -186,6 +194,7 @@ async def test_search_venues_finds_turkish_name_typed_without_diacritics(
 
 async def test_search_venues_tolerates_a_typo(db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Kadıköy'de En İyi Döner",
@@ -202,6 +211,7 @@ async def test_search_venues_tolerates_a_typo(db_session: AsyncSession) -> None:
 
 async def test_search_venues_finds_a_non_turkish_name(db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Starbucks Bağdat Caddesi",
@@ -222,6 +232,7 @@ async def test_search_venues_excludes_non_matching_names(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     await venue_service.create_venue(
         db_session,
         name="Kadıköy'de En İyi Döner",

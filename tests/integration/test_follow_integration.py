@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.exceptions import FollowNotFoundError, SelfFollowError
 from app.models.user import User
 from app.services import follow as follow_service
@@ -29,6 +30,7 @@ async def test_follow_user_persists_and_appears_in_followers(
     db_session: AsyncSession,
 ) -> None:
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     followee = await _create_user(db_session)
 
     await follow_service.follow_user(
@@ -52,6 +54,7 @@ async def test_follow_user_raises_for_self_follow(db_session: AsyncSession) -> N
 
 async def test_follow_user_is_idempotent(db_session: AsyncSession) -> None:
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     followee = await _create_user(db_session)
 
     first = await follow_service.follow_user(
@@ -66,6 +69,7 @@ async def test_follow_user_is_idempotent(db_session: AsyncSession) -> None:
 
 async def test_unfollow_user_removes_the_relationship(db_session: AsyncSession) -> None:
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     followee = await _create_user(db_session)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=followee.id
@@ -85,6 +89,7 @@ async def test_unfollow_user_raises_when_not_following(
     db_session: AsyncSession,
 ) -> None:
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     followee = await _create_user(db_session)
 
     with pytest.raises(FollowNotFoundError):
@@ -97,6 +102,7 @@ async def test_remove_follower_removes_the_same_relationship_as_unfollow(
     db_session: AsyncSession,
 ) -> None:
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     followee = await _create_user(db_session)
     await follow_service.follow_user(
         db_session, follower_id=follower.id, following_id=followee.id
@@ -128,6 +134,7 @@ async def test_list_following_returns_who_a_user_follows(
     db_session: AsyncSession,
 ) -> None:
     follower = await _create_user(db_session)
+    await set_current_user_identity(db_session, follower.id)
     followee_a = await _create_user(db_session)
     followee_b = await _create_user(db_session)
     await follow_service.follow_user(

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.models.notification import NotificationTargetType, NotificationType
 from app.models.user import User
 from app.services import notification as notification_service
@@ -30,6 +31,7 @@ async def test_create_notification_is_immediately_visible_in_the_same_transactio
     recipient = await _create_user(db_session)
     actor = await _create_user(db_session)
 
+    await set_current_user_identity(db_session, actor.id)
     await notification_service.create_notification(
         db_session,
         user_id=recipient.id,
@@ -39,6 +41,7 @@ async def test_create_notification_is_immediately_visible_in_the_same_transactio
         target_id=actor.id,
     )
 
+    await set_current_user_identity(db_session, recipient.id)
     notifications = await notification_service.list_notifications(
         db_session, recipient.id, limit=20, offset=0
     )
@@ -60,6 +63,7 @@ async def test_list_notifications_orders_newest_first(db_session: AsyncSession) 
     recipient = await _create_user(db_session)
     actor = await _create_user(db_session)
 
+    await set_current_user_identity(db_session, actor.id)
     first = await notification_service.create_notification(
         db_session,
         user_id=recipient.id,
@@ -68,8 +72,14 @@ async def test_list_notifications_orders_newest_first(db_session: AsyncSession) 
         target_type=NotificationTargetType.USER,
         target_id=actor.id,
     )
+    # Recipient's own identity for this backdate: it's an UPDATE on the
+    # notification row, and the UPDATE policy is recipient-or-admin only
+    # (no actor exception, unlike SELECT), matching what a real UPDATE
+    # on this row would require.
+    await set_current_user_identity(db_session, recipient.id)
     first.created_at = datetime.now(UTC) - timedelta(minutes=1)
     await db_session.commit()
+    await set_current_user_identity(db_session, actor.id)
     second = await notification_service.create_notification(
         db_session,
         user_id=recipient.id,
@@ -80,6 +90,7 @@ async def test_list_notifications_orders_newest_first(db_session: AsyncSession) 
     )
     await db_session.commit()
 
+    await set_current_user_identity(db_session, recipient.id)
     notifications = await notification_service.list_notifications(
         db_session, recipient.id, limit=20, offset=0
     )
@@ -91,6 +102,7 @@ async def test_count_unread_notifications_only_counts_unread(
 ) -> None:
     recipient = await _create_user(db_session)
     actor = await _create_user(db_session)
+    await set_current_user_identity(db_session, actor.id)
     await notification_service.create_notification(
         db_session,
         user_id=recipient.id,
@@ -101,6 +113,7 @@ async def test_count_unread_notifications_only_counts_unread(
     )
     await db_session.commit()
 
+    await set_current_user_identity(db_session, recipient.id)
     before = await notification_service.count_unread_notifications(
         db_session, recipient.id
     )
@@ -119,6 +132,7 @@ async def test_mark_all_notifications_read_only_affects_the_given_user(
     recipient_a = await _create_user(db_session)
     recipient_b = await _create_user(db_session)
     actor = await _create_user(db_session)
+    await set_current_user_identity(db_session, actor.id)
     for recipient in (recipient_a, recipient_b):
         await notification_service.create_notification(
             db_session,
@@ -130,11 +144,13 @@ async def test_mark_all_notifications_read_only_affects_the_given_user(
         )
     await db_session.commit()
 
+    await set_current_user_identity(db_session, recipient_a.id)
     await notification_service.mark_all_notifications_read(db_session, recipient_a.id)
-
     unread_a = await notification_service.count_unread_notifications(
         db_session, recipient_a.id
     )
+
+    await set_current_user_identity(db_session, recipient_b.id)
     unread_b = await notification_service.count_unread_notifications(
         db_session, recipient_b.id
     )
@@ -147,6 +163,7 @@ async def test_mark_all_notifications_read_is_idempotent(
 ) -> None:
     recipient = await _create_user(db_session)
     actor = await _create_user(db_session)
+    await set_current_user_identity(db_session, actor.id)
     await notification_service.create_notification(
         db_session,
         user_id=recipient.id,
@@ -157,6 +174,7 @@ async def test_mark_all_notifications_read_is_idempotent(
     )
     await db_session.commit()
 
+    await set_current_user_identity(db_session, recipient.id)
     await notification_service.mark_all_notifications_read(db_session, recipient.id)
     await notification_service.mark_all_notifications_read(db_session, recipient.id)
 

@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     environment: str
     cors_origins: str
     database_url: str
+    # The running API's own connection identity from Phase 8 onward: the
+    # least-privilege `obur_app` role, never the owner role `database_url`
+    # connects as (migrations, the seeder). See ADR-0016 in obur-docs.
+    # Deliberately a separate setting, not derived from `database_url`: an
+    # owner-role connection string with the app role's credentials spliced
+    # in would silently reintroduce the single-role setup this exists to
+    # replace the moment someone forgot to change it back.
+    app_database_url: str
     redis_url: str
     # Genuinely consumed now (app/core/security.py) — required as of Phase 1.
     clerk_secret_key: str

@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import set_current_user_identity
 from app.core.visibility import Visibility
 from app.exceptions import (
     NotVenueSaveOwnerError,
@@ -38,6 +39,9 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, added_by: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, added_by.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -52,6 +56,7 @@ async def _create_venue(session: AsyncSession, added_by: User) -> Venue:
 
 async def test_save_venue_raises_when_venue_missing(db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
 
     with pytest.raises(VenueNotFoundError):
         await venue_save_service.save_venue(
@@ -61,6 +66,7 @@ async def test_save_venue_raises_when_venue_missing(db_session: AsyncSession) ->
 
 async def test_save_venue_defaults_to_private(db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     venue = await _create_venue(db_session, user)
 
     save = await venue_save_service.save_venue(
@@ -72,6 +78,7 @@ async def test_save_venue_defaults_to_private(db_session: AsyncSession) -> None:
 
 async def test_save_venue_is_idempotent_per_type(db_session: AsyncSession) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     venue = await _create_venue(db_session, user)
 
     first = await venue_save_service.save_venue(
@@ -88,6 +95,7 @@ async def test_save_venue_allows_independent_saves_per_type(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session)
+    await set_current_user_identity(db_session, user.id)
     venue = await _create_venue(db_session, user)
 
     visited = await venue_save_service.save_venue(
@@ -102,6 +110,7 @@ async def test_save_venue_allows_independent_saves_per_type(
 
 async def test_get_venue_save_returns_it_to_the_owner(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner)
     save = await venue_save_service.save_venue(
         db_session, user_id=owner.id, venue_id=venue.id, type="visited"
@@ -116,6 +125,7 @@ async def test_list_venue_saves_for_user_filters_by_viewer(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
     await venue_save_service.save_venue(
@@ -129,9 +139,11 @@ async def test_list_venue_saves_for_user_filters_by_viewer(
         visibility=Visibility.PUBLIC,
     )
 
+    await set_current_user_identity(db_session, stranger.id)
     as_stranger = await venue_save_service.list_venue_saves_for_user(
         db_session, owner.id, viewer=stranger, limit=20, offset=0
     )
+    await set_current_user_identity(db_session, owner.id)
     as_owner = await venue_save_service.list_venue_saves_for_user(
         db_session, owner.id, viewer=owner, limit=20, offset=0
     )
@@ -144,6 +156,7 @@ async def test_update_venue_save_raises_when_it_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(VenueSaveNotFoundError):
         await venue_save_service.update_venue_save(
@@ -158,6 +171,7 @@ async def test_update_venue_save_persists_changes_for_the_owner(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner)
     save = await venue_save_service.save_venue(
         db_session, user_id=owner.id, venue_id=venue.id, type="visited"
@@ -177,6 +191,7 @@ async def test_delete_venue_save_raises_when_it_does_not_exist(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
 
     with pytest.raises(VenueSaveNotFoundError):
         await venue_save_service.delete_venue_save(
@@ -188,12 +203,14 @@ async def test_get_venue_save_raises_when_invisible_to_a_stranger(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
     save = await venue_save_service.save_venue(
         db_session, user_id=owner.id, venue_id=venue.id, type="visited"
     )
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(VenueSaveNotFoundError):
         await venue_save_service.get_venue_save(db_session, save.id, viewer=stranger)
 
@@ -206,12 +223,14 @@ async def test_update_venue_save_by_non_owner_on_invisible_save_returns_not_foun
     app.core.authz.ensure_visible_and_owned).
     """
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
     save = await venue_save_service.save_venue(
         db_session, user_id=owner.id, venue_id=venue.id, type="visited"
     )
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(VenueSaveNotFoundError):
         await venue_save_service.update_venue_save(
             db_session,
@@ -225,6 +244,7 @@ async def test_update_venue_save_by_non_owner_on_visible_save_returns_not_owner(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     stranger = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
     save = await venue_save_service.save_venue(
@@ -235,6 +255,7 @@ async def test_update_venue_save_by_non_owner_on_visible_save_returns_not_owner(
         visibility=Visibility.PUBLIC,
     )
 
+    await set_current_user_identity(db_session, stranger.id)
     with pytest.raises(NotVenueSaveOwnerError):
         await venue_save_service.update_venue_save(
             db_session,
@@ -246,6 +267,7 @@ async def test_update_venue_save_by_non_owner_on_visible_save_returns_not_owner(
 
 async def test_delete_venue_save_removes_the_row(db_session: AsyncSession) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner)
     save = await venue_save_service.save_venue(
         db_session, user_id=owner.id, venue_id=venue.id, type="visited"
@@ -265,6 +287,7 @@ async def test_db_rejects_an_invalid_type_bypassing_the_service_layer(
     at the API boundary — see app/models/venue_save.py.
     """
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner)
 
     with pytest.raises(IntegrityError):
@@ -279,6 +302,7 @@ async def test_db_rejects_an_invalid_visibility_bypassing_the_service_layer(
     db_session: AsyncSession,
 ) -> None:
     owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
     venue = await _create_venue(db_session, owner)
 
     with pytest.raises(IntegrityError):

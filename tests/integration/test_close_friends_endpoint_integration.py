@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.main import app
 from app.models.user import User
+from tests.integration.conftest import override_current_user
 
 
 async def _create_user(session: AsyncSession) -> User:
@@ -29,7 +30,9 @@ async def test_add_close_friend_requires_a_current_follower_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     non_follower = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         response = await client_with_db_session.post(
@@ -46,13 +49,17 @@ async def test_add_then_list_close_friends_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     follower = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: follower
+    app.dependency_overrides[get_current_user] = override_current_user(
+        follower, db_session
+    )
     try:
         await client_with_db_session.post(f"/api/v1/users/{owner.id}/follow")
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         add_response = await client_with_db_session.post(
             f"/api/v1/users/me/close-friends/{follower.id}"
@@ -73,7 +80,9 @@ async def test_remove_close_friend_not_on_the_list_returns_404_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     stranger = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         response = await client_with_db_session.delete(

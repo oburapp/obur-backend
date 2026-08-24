@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.main import app
 from app.models.user import User
+from tests.integration.conftest import override_current_user
 
 
 async def _create_user(session: AsyncSession) -> User:
@@ -29,13 +30,17 @@ async def test_notification_flow_over_http(
 ) -> None:
     followee = await _create_user(db_session)
     follower = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: follower
+    app.dependency_overrides[get_current_user] = override_current_user(
+        follower, db_session
+    )
     try:
         await client_with_db_session.post(f"/api/v1/users/{followee.id}/follow")
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: followee
+    app.dependency_overrides[get_current_user] = override_current_user(
+        followee, db_session
+    )
     try:
         unread_response = await client_with_db_session.get(
             "/api/v1/users/me/notifications/unread-count"

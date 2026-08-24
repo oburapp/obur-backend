@@ -8,10 +8,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
+from app.core.database import set_current_user_identity
 from app.main import app
 from app.models.user import User
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
+from tests.integration.conftest import override_current_user
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
@@ -29,6 +31,11 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, added_by: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7), so this direct-insert test helper has to
+    # set one, same as the real `POST /api/v1/venues` endpoint would via
+    # `get_current_user`.
+    await set_current_user_identity(session, added_by.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -46,7 +53,7 @@ async def test_save_venue_defaults_to_private_over_http(
 ) -> None:
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         response = await client_with_db_session.post(
@@ -64,7 +71,7 @@ async def test_invalid_type_returns_422_over_http(
 ) -> None:
     user = await _create_user(db_session)
     venue = await _create_venue(db_session, user)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         response = await client_with_db_session.post(
@@ -83,7 +90,9 @@ async def test_private_venue_save_is_hidden_from_other_users_over_http(
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         create_response = await client_with_db_session.post(
@@ -93,7 +102,9 @@ async def test_private_venue_save_is_hidden_from_other_users_over_http(
         del app.dependency_overrides[get_current_user]
     save_id = create_response.json()["id"]
 
-    app.dependency_overrides[get_optional_current_user] = lambda: other_user
+    app.dependency_overrides[get_optional_current_user] = override_current_user(
+        other_user, db_session
+    )
     try:
         response = await client_with_db_session.get(f"/api/v1/venue-saves/{save_id}")
     finally:
@@ -107,7 +118,9 @@ async def test_update_visibility_then_delete_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         save_id = (

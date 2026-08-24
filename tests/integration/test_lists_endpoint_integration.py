@@ -8,10 +8,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
+from app.core.database import set_current_user_identity
 from app.main import app
 from app.models.user import User
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
+from tests.integration.conftest import override_current_user
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
@@ -29,6 +31,9 @@ async def _create_user(session: AsyncSession) -> User:
 
 
 async def _create_venue(session: AsyncSession, added_by: User) -> Venue:
+    # Venue creation now requires an authenticated identity (RLS,
+    # migration c1d5a8f042e7).
+    await set_current_user_identity(session, added_by.id)
     venue = Venue(
         name="Kahveci",
         lat=41.0,
@@ -45,7 +50,9 @@ async def test_create_list_then_fetch_it_by_id(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         create_response = await client_with_db_session.post(
@@ -68,7 +75,9 @@ async def test_private_list_is_hidden_from_other_users_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     other_user = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         create_response = await client_with_db_session.post(
@@ -78,7 +87,9 @@ async def test_private_list_is_hidden_from_other_users_over_http(
         del app.dependency_overrides[get_current_user]
     list_id = create_response.json()["id"]
 
-    app.dependency_overrides[get_optional_current_user] = lambda: other_user
+    app.dependency_overrides[get_optional_current_user] = override_current_user(
+        other_user, db_session
+    )
     try:
         response = await client_with_db_session.get(f"/api/v1/lists/{list_id}")
     finally:
@@ -93,7 +104,9 @@ async def test_add_item_then_move_it_over_http(
     owner = await _create_user(db_session)
     venue_a = await _create_venue(db_session, owner)
     venue_b = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         list_id = (
@@ -126,7 +139,9 @@ async def test_add_duplicate_venue_returns_409_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     venue = await _create_venue(db_session, owner)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
 
     try:
         list_id = (
@@ -149,7 +164,9 @@ async def test_like_then_unlike_a_list_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     liker = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         list_id = (
             await client_with_db_session.post("/api/v1/lists", json={"title": "Liste"})
@@ -157,7 +174,9 @@ async def test_like_then_unlike_a_list_over_http(
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: liker
+    app.dependency_overrides[get_current_user] = override_current_user(
+        liker, db_session
+    )
     try:
         like_response = await client_with_db_session.post(
             f"/api/v1/lists/{list_id}/like"
@@ -181,7 +200,9 @@ async def test_bookmark_a_list_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     bookmarker = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         list_id = (
             await client_with_db_session.post("/api/v1/lists", json={"title": "Liste"})
@@ -189,7 +210,9 @@ async def test_bookmark_a_list_over_http(
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: bookmarker
+    app.dependency_overrides[get_current_user] = override_current_user(
+        bookmarker, db_session
+    )
     try:
         response = await client_with_db_session.post(
             f"/api/v1/lists/{list_id}/bookmark"
@@ -205,7 +228,9 @@ async def test_delete_list_by_non_owner_returns_403_over_http(
 ) -> None:
     owner = await _create_user(db_session)
     stranger = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: owner
+    app.dependency_overrides[get_current_user] = override_current_user(
+        owner, db_session
+    )
     try:
         list_id = (
             await client_with_db_session.post("/api/v1/lists", json={"title": "Liste"})
@@ -213,7 +238,9 @@ async def test_delete_list_by_non_owner_returns_403_over_http(
     finally:
         del app.dependency_overrides[get_current_user]
 
-    app.dependency_overrides[get_current_user] = lambda: stranger
+    app.dependency_overrides[get_current_user] = override_current_user(
+        stranger, db_session
+    )
     try:
         response = await client_with_db_session.delete(f"/api/v1/lists/{list_id}")
     finally:

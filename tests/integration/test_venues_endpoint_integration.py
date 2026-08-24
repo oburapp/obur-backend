@@ -11,6 +11,7 @@ from app.core.auth import get_current_user
 from app.main import app
 from app.models.user import User
 from app.seeds.identity import venue_category_id
+from tests.integration.conftest import override_current_user
 
 _CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
@@ -31,7 +32,7 @@ async def test_create_venue_then_fetch_it_by_id(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         create_response = await client_with_db_session.post(
@@ -59,7 +60,7 @@ async def test_create_venue_returns_409_when_duplicate_within_50_meters(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         first = await client_with_db_session.post(
@@ -93,7 +94,7 @@ async def test_search_venues_over_http_finds_turkish_name(
     client_with_db_session: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await _create_user(db_session)
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user] = override_current_user(user, db_session)
 
     try:
         await client_with_db_session.post(
