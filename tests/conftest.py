@@ -43,7 +43,9 @@ from collections.abc import AsyncGenerator  # noqa: E402
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
+from app.core.redis import redis_client  # noqa: E402
 from app.main import app  # noqa: E402
+from app.middleware.rate_limit import KEY_NAMESPACE  # noqa: E402
 
 
 @pytest.fixture
@@ -52,3 +54,26 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture(autouse=True)
+async def _reset_rate_limit_counters() -> AsyncGenerator[None, None]:
+    """Give every test a fresh counter window.
+
+    The limiter stays enabled rather than being stubbed out: it sits in the
+    real middleware stack, so disabling it here would mean no test ever
+    exercises the path a live request takes. Counters are per-caller and
+    tests share one caller, so without this the suite spends its own quota
+    and later tests get 429s that have nothing to do with what they assert.
+
+    Only the limiter's own namespace is cleared — never `flushdb`, which
+    would take the cache with it.
+    """
+    await _clear_rate_limit_counters()
+    yield
+    await _clear_rate_limit_counters()
+
+
+async def _clear_rate_limit_counters() -> None:
+    async for key in redis_client.scan_iter(match=f"{KEY_NAMESPACE}:*"):
+        await redis_client.delete(key)

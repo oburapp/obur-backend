@@ -3,7 +3,7 @@ primary sync mechanism; `app.core.auth`'s JIT provisioning is only a
 fallback for the race where a request arrives before a webhook does.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,13 +107,7 @@ async def handle_clerk_webhook(
     configured to send more than this endpoint currently acts on.
     """
     body = await request.body()
-    try:
-        payload = _verify_signature(body, dict(request.headers))
-    except InvalidWebhookSignatureError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature",
-        ) from e
+    payload = _verify_signature(body, dict(request.headers))
 
     event = ClerkWebhookEvent.model_validate(payload)
 

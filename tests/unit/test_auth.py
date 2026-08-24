@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Request
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import IntegrityError
 
+from app.core import problems
 from app.core.auth import get_current_user, get_optional_current_user
+from app.core.problems import ProblemError
 from app.exceptions import InvalidTokenError
 from app.models.user import User, UserStatus
 
@@ -88,18 +90,22 @@ async def test_get_current_user_reraises_when_row_truly_missing_after_race(
         await get_current_user(MagicMock(), session)
 
 
-async def test_get_current_user_raises_401_on_invalid_token(
+async def test_get_current_user_propagates_an_invalid_token(
     mocker: MockerFixture,
 ) -> None:
+    """The dependency does not translate this itself.
+
+    `InvalidTokenError` reaches the global handler, which renders the 401
+    problem response — so this asserts the exception escapes rather than
+    being swallowed into an HTTP concern here.
+    """
     mocker.patch(
         "app.core.auth.verify_session",
         AsyncMock(side_effect=InvalidTokenError("bad token")),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidTokenError):
         await get_current_user(MagicMock(), AsyncMock())
-
-    assert exc_info.value.status_code == 401
 
 
 async def test_get_optional_current_user_returns_none_on_invalid_token(
@@ -141,10 +147,10 @@ async def test_get_current_user_rejects_a_suspended_account(
         AsyncMock(return_value=User(status=UserStatus.SUSPENDED)),
     )
 
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(ProblemError) as excinfo:
         await get_current_user(MagicMock(spec=Request), session)
 
-    assert excinfo.value.status_code == 403
+    assert excinfo.value.problem is problems.ACCOUNT_SUSPENDED
 
 
 async def test_get_current_user_reactivates_a_frozen_account(

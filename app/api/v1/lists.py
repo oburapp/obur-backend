@@ -2,21 +2,12 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.pagination import DEFAULT_LIMIT, MAX_LIMIT
-from app.exceptions import (
-    BookmarkNotFoundError,
-    DuplicateListItemError,
-    LikeNotFoundError,
-    ListItemNotFoundError,
-    ListNotFoundError,
-    NotListOwnerError,
-    VenueNotFoundError,
-)
 from app.models.user import User
 from app.schemas.list import (
     ListCreateRequest,
@@ -63,12 +54,7 @@ async def get_list(
     owner or an admin — anyone else gets 404, the same as if it didn't
     exist.
     """
-    try:
-        venue_list = await list_service.get_list(session, list_id, viewer=viewer)
-    except ListNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
-        ) from e
+    venue_list = await list_service.get_list(session, list_id, viewer=viewer)
     return ListResponse.model_validate(venue_list)
 
 
@@ -80,19 +66,12 @@ async def update_list(
     session: AsyncSession = Depends(get_session),
 ) -> ListResponse:
     """Update a list's editable fields. Owner or admin only."""
-    try:
-        venue_list = await list_service.update_list(
-            session,
-            list_id,
-            current_user=current_user,
-            updates=payload.model_dump(exclude_unset=True),
-        )
-    except ListNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
-        ) from e
-    except NotListOwnerError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    venue_list = await list_service.update_list(
+        session,
+        list_id,
+        current_user=current_user,
+        updates=payload.model_dump(exclude_unset=True),
+    )
     return ListResponse.model_validate(venue_list)
 
 
@@ -103,14 +82,7 @@ async def delete_list(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Permanently delete a list and its items. Owner or admin only."""
-    try:
-        await list_service.delete_list(session, list_id, current_user=current_user)
-    except ListNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
-        ) from e
-    except NotListOwnerError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    await list_service.delete_list(session, list_id, current_user=current_user)
 
 
 @router.get("/{list_id}/items")
@@ -124,12 +96,7 @@ async def list_items(
     """List a list's items in order. 404s the same as `get_list` if the
     list isn't visible to `viewer`.
     """
-    try:
-        await list_service.get_list(session, list_id, viewer=viewer)
-    except ListNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
-        ) from e
+    await list_service.get_list(session, list_id, viewer=viewer)
     items = await list_item_service.list_items_for_list(
         session, list_id, limit=limit, offset=offset
     )
@@ -144,22 +111,13 @@ async def add_list_item(
     session: AsyncSession = Depends(get_session),
 ) -> ListItemResponse:
     """Add a venue to a list. Owner or admin only."""
-    try:
-        item = await list_item_service.add_list_item(
-            session,
-            list_id,
-            current_user=current_user,
-            venue_id=payload.venue_id,
-            after_item_id=payload.after_item_id,
-        )
-    except (ListNotFoundError, VenueNotFoundError, ListItemNotFoundError) as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except NotListOwnerError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
-    except DuplicateListItemError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
-        ) from e
+    item = await list_item_service.add_list_item(
+        session,
+        list_id,
+        current_user=current_user,
+        venue_id=payload.venue_id,
+        after_item_id=payload.after_item_id,
+    )
     return ListItemResponse.model_validate(item)
 
 
@@ -172,18 +130,13 @@ async def move_list_item(
     session: AsyncSession = Depends(get_session),
 ) -> ListItemResponse:
     """Move an existing list item. Owner or admin only."""
-    try:
-        item = await list_item_service.move_list_item(
-            session,
-            list_id,
-            item_id,
-            current_user=current_user,
-            after_item_id=payload.after_item_id,
-        )
-    except (ListNotFoundError, ListItemNotFoundError) as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except NotListOwnerError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    item = await list_item_service.move_list_item(
+        session,
+        list_id,
+        item_id,
+        current_user=current_user,
+        after_item_id=payload.after_item_id,
+    )
     return ListItemResponse.model_validate(item)
 
 
@@ -195,14 +148,9 @@ async def remove_list_item(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Remove an item from a list. Owner or admin only."""
-    try:
-        await list_item_service.remove_list_item(
-            session, list_id, item_id, current_user=current_user
-        )
-    except (ListNotFoundError, ListItemNotFoundError) as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except NotListOwnerError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    await list_item_service.remove_list_item(
+        session, list_id, item_id, current_user=current_user
+    )
 
 
 @router.post("/{list_id}/like", status_code=status.HTTP_204_NO_CONTENT)
@@ -214,12 +162,7 @@ async def like_list(
     """Like a list. Idempotent. Liking a list you can't see isn't
     possible — same visibility rules as `get_list`.
     """
-    try:
-        await like_service.like_list(session, list_id, current_user=current_user)
-    except ListNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
-        ) from e
+    await like_service.like_list(session, list_id, current_user=current_user)
 
 
 @router.delete("/{list_id}/like", status_code=status.HTTP_204_NO_CONTENT)
@@ -229,12 +172,7 @@ async def unlike_list(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Un-like a list."""
-    try:
-        await like_service.unlike_list(session, list_id, current_user=current_user)
-    except LikeNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="List not liked"
-        ) from e
+    await like_service.unlike_list(session, list_id, current_user=current_user)
 
 
 @router.post("/{list_id}/bookmark", status_code=status.HTTP_204_NO_CONTENT)
@@ -244,14 +182,7 @@ async def bookmark_list(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Bookmark a list. Idempotent, private — never a social signal."""
-    try:
-        await bookmark_service.bookmark_list(
-            session, list_id, current_user=current_user
-        )
-    except ListNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_LIST_NOT_FOUND_DETAIL
-        ) from e
+    await bookmark_service.bookmark_list(session, list_id, current_user=current_user)
 
 
 @router.delete("/{list_id}/bookmark", status_code=status.HTTP_204_NO_CONTENT)
@@ -261,11 +192,4 @@ async def unbookmark_list(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Remove a list bookmark."""
-    try:
-        await bookmark_service.unbookmark_list(
-            session, list_id, current_user=current_user
-        )
-    except BookmarkNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="List not bookmarked"
-        ) from e
+    await bookmark_service.unbookmark_list(session, list_id, current_user=current_user)

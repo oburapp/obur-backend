@@ -9,10 +9,13 @@ from uuid import uuid4
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
 
+from app.core import problems
 from app.core.auth import get_current_user
 from app.exceptions import UsernameChangedTooRecentlyError, UsernameTakenError
 from app.main import app
 from app.models.user import User, UserStatus
+
+_USERNAME_UNLOCKS_AT = datetime(2026, 9, 12, tzinfo=UTC)
 
 
 def _user(**overrides: object) -> User:
@@ -82,7 +85,7 @@ async def test_update_me_returns_429_when_the_username_changed_too_recently(
 ) -> None:
     mocker.patch(
         "app.api.v1.users.user_service.update_profile",
-        AsyncMock(side_effect=UsernameChangedTooRecentlyError("too soon")),
+        AsyncMock(side_effect=UsernameChangedTooRecentlyError(_USERNAME_UNLOCKS_AT)),
     )
 
     response = await _as(
@@ -90,6 +93,10 @@ async def test_update_me_returns_429_when_the_username_changed_too_recently(
     )
 
     assert response.status_code == 429
+    # Rate limiting returns 429 too (ADR-0014). The `type` is what tells the
+    # two apart, so asserting only the status would not cover the collision
+    # this endpoint's contract exists to resolve.
+    assert response.json()["type"] == problems.USERNAME_CHANGED_TOO_RECENTLY.type
 
 
 async def test_update_me_rejects_a_username_with_illegal_characters(

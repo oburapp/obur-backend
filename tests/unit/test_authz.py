@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 
+from app.core import problems
 from app.core.authz import (
     can_view,
     close_friend_of_owner_exists,
@@ -14,6 +14,7 @@ from app.core.authz import (
     is_owner_or_admin,
     require_admin,
 )
+from app.core.problems import ProblemError
 from app.core.visibility import Visibility
 from app.exceptions import CheckinNotFoundError, NotCheckinOwnerError
 from app.models.checkin import Checkin
@@ -53,10 +54,10 @@ async def test_require_admin_returns_the_user_when_admin() -> None:
 async def test_require_admin_raises_403_for_a_regular_user() -> None:
     user = _user()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ProblemError) as exc_info:
         await require_admin(user)
 
-    assert exc_info.value.status_code == 403
+    assert exc_info.value.problem is problems.ADMIN_REQUIRED
 
 
 def _session_with_close_friend_result(*, found: bool) -> AsyncMock:

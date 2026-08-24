@@ -7,6 +7,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
 
+from app.core import problems
 from app.core.auth import get_current_user
 from app.exceptions import (
     BookmarkNotFoundError,
@@ -255,7 +256,7 @@ async def test_add_list_item_returns_403_when_not_owner(
     assert response.status_code == 403
 
 
-async def test_add_list_item_returns_422_on_duplicate(
+async def test_add_list_item_returns_409_on_duplicate(
     client: AsyncClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
@@ -271,7 +272,8 @@ async def test_add_list_item_returns_422_on_duplicate(
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 422
+    assert response.status_code == 409
+    assert response.json()["type"] == problems.DUPLICATE_LIST_ITEM.type
 
 
 async def test_move_list_item_returns_200(

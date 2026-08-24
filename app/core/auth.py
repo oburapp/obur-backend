@@ -5,12 +5,14 @@ between Clerk-specific verification (`app.core.security`) and the rest of
 the app, which only ever sees our own `User` model.
 """
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import problems
 from app.core.database import get_session
+from app.core.problems import ProblemError
 from app.core.security import verify_session
 from app.core.user_identity import fallback_username
 from app.exceptions import InvalidTokenError
@@ -27,28 +29,27 @@ async def get_current_user(
     """Resolve the authenticated request to a `User` row, for endpoints
     that require a signed-in caller.
     """
-    try:
-        user = await _resolve_user(request, session)
-    except InvalidTokenError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired session",
-        ) from e
+    # `InvalidTokenError` is left to propagate: app/core/problem_mapping.py
+    # turns it into the same problem response every other domain error goes
+    # through, so this dependency does not need its own HTTP knowledge.
+    user = await _resolve_user(request, session)
 
     if user.status == UserStatus.SUSPENDED:
         # Told plainly to the suspended account itself. The "moderation is
         # indistinguishable from nonexistence" rule protects the *other*
         # party from learning an action was taken (PDD §11, §13); hiding it
         # from the person it happened to would just look like a broken app.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="This account is suspended"
-        )
+        raise ProblemError(problems.ACCOUNT_SUSPENDED)
 
     # Signing back in *is* the reactivation gesture for a frozen account
     # (PDD §6) — there is no separate unfreeze endpoint to find.
     if user.status == UserStatus.FROZEN:
-        return await user_service.reactivate_account(session, user=user)
+        user = await user_service.reactivate_account(session, user=user)
 
+    # Lets the rate limiter key on the caller rather than their address once
+    # they are known (app/middleware/rate_limit.py). Set here because this is
+    # the one place every authenticated request passes through.
+    request.state.user_id = user.id
     return user
 
 
@@ -65,7 +66,7 @@ async def get_optional_current_user(
     """
     try:
         return await get_current_user(request, session)
-    except HTTPException:
+    except ProblemError:
         # A suspended account reads as anonymous here rather than 403: this
         # dependency exists for endpoints that are public but richer for a
         # known viewer, and those should still serve their public content.

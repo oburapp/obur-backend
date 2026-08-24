@@ -2,13 +2,12 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.pagination import DEFAULT_LIMIT, MAX_LIMIT
-from app.exceptions import UsernameChangedTooRecentlyError, UsernameTakenError
 from app.models.user import User
 from app.models.venue_save import VenueSaveTypeValue
 from app.schemas.checkin import CheckinResponse
@@ -41,20 +40,11 @@ async def update_me(
     Only fields present in the request are changed. Changing `username` is
     rate-limited and must not collide with another account's handle.
     """
-    try:
-        updated = await user_service.update_profile(
-            session,
-            user=current_user,
-            changes=payload.model_dump(exclude_unset=True),
-        )
-    except UsernameTakenError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Username already taken"
-        ) from e
-    except UsernameChangedTooRecentlyError as e:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)
-        ) from e
+    updated = await user_service.update_profile(
+        session,
+        user=current_user,
+        changes=payload.model_dump(exclude_unset=True),
+    )
 
     return UserResponse.model_validate(updated)
 

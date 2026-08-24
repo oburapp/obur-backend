@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rate limiting on every endpoint, per ADR-0014. Two tiers: a generous
+  baseline for reads, and a strict one on the writes whose abuse damages
+  data rather than costing bandwidth (check-in, venue, follow).
+  Authenticated callers are keyed by user id, anonymous ones by an
+  HMAC of their address that is never stored or logged. Fixed-window
+  counters rather than a sliding log, chosen on memory-safety grounds:
+  a precise limiter with attacker-chosen keys is a way to exhaust the
+  store that protects us. Refusals carry `Retry-After` and the
+  widely implemented `RateLimit-*` fields
+- The client address is resolved rightmost-ish from `X-Forwarded-For`
+  (`app/core/client_ip.py`). Reading the header from the left is a
+  documented rate-limiter bypass — an attacker spoofs a fresh prefix per
+  request and never fills a counter. `TRUSTED_PROXY_COUNT` is required
+  configuration with no default, because a wrong value fails silently
+  in both directions
+- RFC 9457 problem responses on every error path, per ADR-0015.
+  One body shape — including FastAPI's own validation errors, which are
+  normalised into it — so a client writes one parser. `type` is the
+  machine-readable discriminator, which is what finally separates the
+  two conditions that both return 429: rate limiting, and a username
+  changed too recently
+- `X-Request-ID` on every response, on every log line, and in every
+  problem body, so a person reporting a failure can name it and have it
+  found. An inbound id is honoured only if it validates — an
+  unvalidated client string written to every log line is a
+  log-injection vector
+- Structured request logging: method, route template, status, and
+  duration as JSON fields. The route *template*, never the path, so
+  lines aggregate and no identifier reaches the log through a URL. The
+  client address is excluded deliberately — stricter than OWASP's list,
+  because ADR-0014's position is that an address may be counted against
+  but not recorded
 - `GET /api/v1/venue-categories`: the category tree with names resolved
   for the request. Public and unauthenticated, because a client needs it
   to render the venue creation form and Discover's filters before anyone
@@ -28,8 +60,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `category_id`. One catalog lookup per request regardless of how many
   venues come back
 
+
 ### Changed
 
+- Routes no longer catch their own domain exceptions to convert them
+  into HTTP errors. Thirty-three `try`/`except` blocks came out; the
+  exceptions now reach handlers registered per domain base class. Around
+  fifteen call sites had been returning `detail=str(e)`, sending
+  internal exception text to callers — `NotListOwnerError` reached a
+  client as `"user 8f3a… may not delete list 2b1c…"`. Exception messages
+  are developer-facing text and stay in the logs
+- Adding a venue that is already in a list returns `409`, not `422`.
+  It is a state conflict, not a malformed request, and `422` is what
+  schema validation already means here
 - The venue category catalog grows from 9 entries to 48 (4 roots, 44
   leaves) and is restructured to classify venue **format** only, per
   ADR-0013. `VENUE.category_id` became the platform's only classification
@@ -44,6 +87,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paper. Resolution falls back to `DEFAULT_LOCALE` per name, so a
   partially translated catalog degrades to readable instead of blank
 
+### Fixed
+
+- The strict rate-limit tier never applied. The tier was read from
+  `scope["route"]`, which Starlette does not populate until the router
+  runs — after all middleware. Check-in, venue, and follow creation were
+  therefore metered at the baseline 600/hour instead of 30, and failed
+  *open* rather than closed when the counter store was unavailable.
+  Routes are now matched against templates the limiter declares itself,
+  pinned to live routes by a test so a renamed endpoint fails loudly
+  instead of silently dropping a tier
+- Alembic's logging setup disabled every logger that already existed,
+  which is harmless when it runs as its own process and not harmless at
+  all in-process: after the test suite migrated, nothing in `app/`
+  logged anything again. `disable_existing_loggers=False` in
+  `migrations/env.py`
 ## [0.6.0] - 2026-08-24
 
 ### Added
