@@ -12,7 +12,7 @@ from app.main import app
 from app.models.user import User
 from app.seeds.identity import venue_category_id
 
-_CAFE_CATEGORY_ID = venue_category_id("cafe")
+_CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
 
 async def _create_user(db_session: AsyncSession) -> User:

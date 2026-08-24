@@ -25,7 +25,7 @@ from app.services import bookmark as bookmark_service
 from app.services import checkin as checkin_service
 from app.services import list as list_service
 
-_CAFE_CATEGORY_ID = venue_category_id("cafe")
+_CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 _TZ = "Europe/Istanbul"
 
 
