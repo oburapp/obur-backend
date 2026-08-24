@@ -32,10 +32,16 @@ from app.models import Base  # noqa: E402
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Configure logging from alembic.ini.
+#
+# `disable_existing_loggers` defaults to True, which switches off every
+# logger that already exists — including the application's. That is harmless
+# when Alembic runs as its own process, and not harmless at all when it runs
+# in-process: the test suite migrates through this file, after which nothing
+# in `app/` logs anything again. Alembic configuring its own logging should
+# not silence the application's.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
