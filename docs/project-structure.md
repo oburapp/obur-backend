@@ -24,7 +24,7 @@ obur-backend/
 │   │       ├── venue_saves.py
 │   │       ├── venues.py
 │   │       ├── webhooks.py
-│   │       ├── categories.py      # (Phase 6) venue-category catalog
+│   │       ├── venue_categories.py
 │   │       ├── blocks.py          # (Phase 10)
 │   │       ├── mutes.py           # (Phase 10)
 │   │       ├── reports.py         # (Phase 10)
@@ -41,7 +41,8 @@ obur-backend/
 │   │   ├── config.py          # settings via pydantic-settings
 │   │   ├── database.py        # async engine, session factory
 │   │   ├── geo.py             # SRID and proximity constants
-│   │   ├── i18n.py            # locale constants, translation resolution
+│   │   ├── i18n.py            # locale constants and Accept-Language parsing
+│   │   ├── locale.py          # this request's locale (needs the viewer)
 │   │   ├── pagination.py      # shared page-size default and ceiling
 │   │   ├── ratings.py         # the shared four-point scale
 │   │   ├── redis.py           # redis client
@@ -69,7 +70,7 @@ obur-backend/
 │   │   └── locales/
 │   │       ├── __init__.py
 │   │       ├── tr.py          # per-locale display names, one module per language
-│   │       └── en.py          # (Phase 6)
+│   │       └── en.py
 │   ├── middleware/            # (Phase 7) rate limiting, request id, logging
 │   │   └── __init__.py
 │   └── main.py                # FastAPI app, lifespan, middleware registration

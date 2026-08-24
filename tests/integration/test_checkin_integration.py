@@ -25,7 +25,7 @@ from app.services import checkin as checkin_service
 from app.services import close_friend as close_friend_service
 from app.services import follow as follow_service
 
-_CAFE_CATEGORY_ID = venue_category_id("cafe")
+_CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 _LAT = 40.9905
 _LNG = 29.0234
 _TZ = "Europe/Istanbul"

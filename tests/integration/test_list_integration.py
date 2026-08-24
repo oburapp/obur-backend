@@ -28,7 +28,7 @@ from app.services import follow as follow_service
 from app.services import list as list_service
 from app.services import list_item as list_item_service
 
-_CAFE_CATEGORY_ID = venue_category_id("cafe")
+_CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
 
 async def _create_user(session: AsyncSession) -> User:

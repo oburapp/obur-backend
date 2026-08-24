@@ -22,7 +22,7 @@ from app.models.venue_save import VenueSave
 from app.seeds.identity import venue_category_id
 from app.services import venue_save as venue_save_service
 
-_CAFE_CATEGORY_ID = venue_category_id("cafe")
+_CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 
 
 async def _create_user(session: AsyncSession) -> User:

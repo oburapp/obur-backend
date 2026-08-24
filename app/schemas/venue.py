@@ -39,6 +39,11 @@ class VenueResponse(BaseModel):
     # venue survives, the attribution doesn't (see app/models/venue.py).
     added_by: UUID | None
     category_id: UUID
+    # Localized display text for `category_id`, resolved per request (see
+    # app.core.locale). `category_id` stays the thing to key logic off;
+    # this is display only, and is null where the catalog has no name in
+    # any supported locale.
+    category_name: str | None = None
     city: str | None
     country_code: str | None
     timezone: str | None

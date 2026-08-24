@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/v1/venue-categories`: the category tree with names resolved
+  for the request. Public and unauthenticated, because a client needs it
+  to render the venue creation form and Discover's filters before anyone
+  signs in. Deliberately unpaginated, the one exception to this repo's
+  pagination rule: the catalog is curated and bounded, and half a tree is
+  a broken picker rather than a shorter list. A test enforces the ceiling
+  so that stays a fact rather than a promise
+- `app/core/locale.py`: request-time locale resolution. A signed-in
+  user's own `locale` wins, since it is an explicit settings choice that
+  should follow them onto a borrowed device; `Accept-Language` is the
+  fallback for anonymous callers, and `DEFAULT_LOCALE` when neither names
+  something supported
+- English locale seeds, and `SUPPORTED_LOCALES` goes from `("tr",)` to
+  `("tr", "en")` — PDD §6 lists both as MVP, and a language the seeds
+  don't cover isn't really supported
+- `VenueResponse.category_name`, resolved per request beside the raw
+  `category_id`. One catalog lookup per request regardless of how many
+  venues come back
+
+### Changed
+
+- The venue category catalog grows from 9 entries to 48 (4 roots, 44
+  leaves) and is restructured to classify venue **format** only, per
+  ADR-0013. `VENUE.category_id` became the platform's only classification
+  dimension when the product layer was removed (ADR-0011), and three
+  readers depend on its granularity: Discover's filters, the feed's
+  taste-overlap signal, and a user's own "best per category" history.
+  Roots are universal so a second market is additive; leaves are the
+  Turkish seed. `parent_id` already existed, so no schema change
+- The translation tables are read for the first time. They have been
+  seeded since Phase 2 and no service had ever queried one, so the
+  "translation tables over embedded strings" design existed only on
+  paper. Resolution falls back to `DEFAULT_LOCALE` per name, so a
+  partially translated catalog degrades to readable instead of blank
+
 ## [0.6.0] - 2026-08-24
 
 ### Added

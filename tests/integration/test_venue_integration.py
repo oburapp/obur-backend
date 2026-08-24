@@ -16,7 +16,7 @@ from app.models.user import User
 from app.seeds.identity import venue_category_id
 from app.services import venue as venue_service
 
-_CAFE_CATEGORY_ID = venue_category_id("cafe")
+_CAFE_CATEGORY_ID = venue_category_id("cafe-general")
 # Kadıköy, Istanbul — an arbitrary real coordinate, not itself meaningful.
 _LAT = 40.9905
 _LNG = 29.0234

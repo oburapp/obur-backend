@@ -2,24 +2,37 @@
 
 import pytest
 
+from app.core.i18n import SUPPORTED_LOCALES
 from app.seeds.identity import venue_category_id
 from app.seeds.locales import get_venue_category_names
 from app.seeds.venue_categories import VENUE_CATEGORIES
 
 
 def test_venue_category_id_is_deterministic() -> None:
-    assert venue_category_id("cafe") == venue_category_id("cafe")
+    assert venue_category_id("cafe-general") == venue_category_id("cafe-general")
 
 
 def test_venue_category_id_differs_by_slug() -> None:
-    assert venue_category_id("cafe") != venue_category_id("bar")
+    assert venue_category_id("cafe-general") != venue_category_id("bar")
 
 
-def test_every_venue_category_has_a_turkish_name() -> None:
-    names = get_venue_category_names("tr")
+def test_every_venue_category_is_named_in_every_supported_locale() -> None:
+    """A slug missing from a locale table raises `KeyError` inside the
+    seeder, so this catches it before a seed run fails halfway.
+    """
+    for locale in SUPPORTED_LOCALES:
+        names = get_venue_category_names(locale)
+        for category in VENUE_CATEGORIES:
+            assert category.slug in names, f"{category.slug} missing in {locale}"
 
-    for category in VENUE_CATEGORIES:
-        assert category.slug in names
+
+def test_locale_tables_contain_no_slugs_the_catalog_dropped() -> None:
+    """A stale entry is harmless at runtime but hides that a category was
+    removed, so the tables are kept exactly in step.
+    """
+    slugs = {category.slug for category in VENUE_CATEGORIES}
+    for locale in SUPPORTED_LOCALES:
+        assert set(get_venue_category_names(locale)) == slugs, locale
 
 
 def test_every_category_parent_slug_exists_in_venue_categories() -> None:
