@@ -81,7 +81,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await redis_client.aclose()
 
 
-app = FastAPI(title="Obur API", lifespan=lifespan)
+# A deliberate, named setting (app.core.config.Settings.enable_api_docs),
+# not FastAPI's own unexamined default, see docs/threat-model.md, API8.
+_docs_url = "/docs" if settings.enable_api_docs else None
+_redoc_url = "/redoc" if settings.enable_api_docs else None
+_openapi_url = "/openapi.json" if settings.enable_api_docs else None
+
+app = FastAPI(
+    title="Obur API",
+    lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
+)
 
 # Starlette wraps in reverse: the last one added is the outermost. Read this
 # block bottom-up for the request's actual path.

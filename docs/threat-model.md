@@ -22,7 +22,7 @@
 | API5 | Broken Function Level Authorization | Medium | **Low** | None yet; keep `require_admin` discipline as Phase 10 grows the admin surface |
 | API6 | Unrestricted Access to Sensitive Business Flows | Medium | **Low-Medium** | None; fraud/fake-account tooling is a documented, deliberate PDD §17 deferral |
 | API7 | Server Side Request Forgery | None | **None** | None; revisit when R2 or a Geocoding proxy adds outbound calls |
-| API8 | Security Misconfiguration | High | **Low** | Make an explicit call on public `/docs` in production (see below) |
+| API8 | Security Misconfiguration | High | **Low** | None |
 | API9 | Improper Inventory Management | Medium | **Low** | None |
 | API10 | Unsafe Consumption of APIs | Medium | **Low** | Apply the same signature-verify + schema-validate pattern to future integrations |
 
@@ -242,21 +242,20 @@ surface, insecure defaults left untouched.
 - RFC 9457 problem responses (ADR-0015) already closed roughly fifteen
   endpoints that used to leak raw exception text to clients; stack
   traces don't reach responses.
-- **One undecided default, found while writing this document, not
-  previously flagged:** FastAPI's interactive docs (`/docs`, `/redoc`,
-  `/openapi.json`) are exposed with the framework's default settings, in
-  every environment including production - nobody has actively decided
-  this either way, it's just what happens when `docs_url` is never set.
+- FastAPI's interactive docs (`/docs`, `/redoc`, `/openapi.json`) are
+  exposed in every environment, including production. Resolved the
+  same day this document first flagged it as an unexamined default:
+  `Settings.enable_api_docs` (`app/core/config.py`) now names the
+  choice explicitly, defaulting to `true`, a deliberate call (small API
+  surface, no sensitive data behind it, the project is open source),
+  not a framework default nobody looked at.
 
-**Risk: Low**, carried by that one open default. Publicly documented
-APIs are a completely normal, deliberate choice (Stripe, GitHub both do
-it) - the point isn't that it's wrong, it's that right now it's an
-accident of omission rather than a decision.
+**Risk: Low.** Publicly documented APIs are a completely normal,
+deliberate choice (Stripe, GitHub both do it); the point was never that
+public docs are wrong, only that leaving the choice unnamed was.
 
-**Action:** Decide explicitly: keep `/docs` public (fine, if intended,
-`obur-web`/`obur-mobile` developers may want it), or gate it (e.g.
-`docs_url=None` unless `settings.environment != "production"`). Either
-answer is acceptable; leaving it undecided is the actual issue.
+**Action:** None now. If this should ever gate by environment instead
+of staying a flat `true`, it's a config change, not new code.
 
 ---
 

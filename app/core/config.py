@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     r2_bucket_name: str = ""
     r2_endpoint_url: str = ""
 
+    # Whether /docs, /redoc, and /openapi.json are served. Defaulting to
+    # True is a deliberate choice, not an unexamined framework default:
+    # the API surface is small, there is no PHI/financial data behind it,
+    # and the project is open source, so a publicly browsable API has no
+    # real cost. Recorded as its own setting (see docs/threat-model.md,
+    # API8) so disabling it later, if that ever changes, is a config
+    # flip, not a code change.
+    enable_api_docs: bool = True
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse the comma-separated `cors_origins` setting into a list."""
