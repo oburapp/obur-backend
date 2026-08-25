@@ -1,11 +1,10 @@
 # Deployment
 
-> **Status: written ahead of the actual deployment.** This describes the
-> Phase 8 plan and the decisions already made for it, not a verified
-> account of a live system, since no Railway service exists yet. Sections
-> below are marked where they need re-confirming against the real
-> instance once it exists, the same honesty [runbooks/incident-response.md](https://github.com/oburapp/obur-docs/blob/main/runbooks/incident-response.md)
-> already applies to its own stub state.
+> **Status: live.** The Railway project described below is deployed and
+> running (`obur-backend`, `postgis`, `Redis`, EU West). Most of this
+> document is now a verified account of the real system, not a plan.
+> The two items still open are named in
+> [Still open](#still-open) below, not silently assumed done.
 
 Platform: [Railway](https://railway.com). Backend service, PostgreSQL,
 and Redis, all in the same region, per `docs/roadmap.md` Phase 8.
@@ -118,24 +117,39 @@ connectivity rather than just process liveness, no new work needed here.
 
 ## Encryption at rest and network isolation (PDD §18)
 
-Closing PDD §18's open research item, based on Railway's own
-documentation as of Phase 8 planning: data is encrypted "at the storage
-level" (no further detail published on algorithm or key management), and
-databases are private by default, reachable only from other services in
-the same Railway project, not from the public internet, unless Public
-Access is explicitly enabled in a service's Networking settings, which
-this deployment should not do. Both points should be re-confirmed against
-the actual provisioned service once it exists rather than taken only from
-general documentation, and PDD §18 updated to point here once that's
-done.
+Closes PDD §18's open research item. Verified against the real
+provisioned service, not just general documentation:
 
-## Still open once a real service exists
+- **Network isolation.** `railway domain list` and `railway tcp-proxy
+  list` against both `postgis` and `Redis` confirm neither has a public
+  domain or TCP proxy, only `obur-backend` is publicly reachable. (A
+  Railway CLI quirk to note for next time: running `railway domain
+  --service <name>` with no subcommand *creates* a domain rather than
+  checking for one; `railway domain list` is the read-only form. This
+  was found the hard way, by briefly creating and then deleting two
+  domains that should never have existed.)
+- **Encryption at rest.** Confirmed directly by a Railway employee
+  (ray-chen, Railway Central Station, 2024-06-18): data is encrypted "at
+  the storage level," beneath the volume, so this is satisfied
+  regardless of which specific database is provisioned. Railway also
+  holds a SOC 2 Type II certification as of 2026, with audit reports
+  available through their Trust Center on request.
 
-This document describes the plan. These need the real thing, not a
-guess, and shouldn't be filled in here ahead of time:
+**Not yet automated.** This is a manual, one-time check against the CLI.
+When a CI/CD pipeline exists for this repo (none does yet, no
+`.github/workflows`), network isolation at minimum should become an
+automated step in it (list domains/proxies for the database services,
+fail the pipeline if either is non-empty) rather than staying a thing
+someone has to remember to re-check by hand.
 
-- `TRUSTED_PROXY_COUNT`'s real value.
-- Actual observed latency from EU West to Turkey-based users.
-- The `Dockerfile` itself (not yet written).
-- The `CLAUDE.md` raw-SQL carve-out for RLS policy DDL (tracked
-  separately, in `CLAUDE.md` itself once added).
+## Still open
+
+Genuinely unresolved, not a guess dressed up as one:
+
+- `TRUSTED_PROXY_COUNT`'s real value: needs logging the raw
+  `X-Forwarded-For` header on an actual deployed request and reading
+  off the real hop count, not assuming one.
+- Actual observed latency from EU West to Turkey-based users: needs
+  real traffic, which doesn't exist yet (no client is deployed).
+- `authorized_parties` (the `azp` claim): needs `obur-web` /
+  `obur-mobile`'s real origins, which don't exist yet either.
