@@ -34,9 +34,17 @@ def _verify_signature(payload: bytes, headers: dict[str, str]) -> dict[str, obje
         raise InvalidWebhookSignatureError("CLERK_WEBHOOK_SECRET is not configured")
 
     try:
-        return Webhook(settings.clerk_webhook_secret).verify(payload, headers)
+        result = Webhook(settings.clerk_webhook_secret).verify(payload, headers)
     except WebhookVerificationError as e:
         raise InvalidWebhookSignatureError(str(e)) from e
+
+    # svix 2.0 widened verify()'s return type to `dict | None`; the case
+    # is unreachable in practice (a passing verify() has always returned
+    # the parsed payload), but fail closed rather than pass a `None` on
+    # to the rest of this module, which assumes a dict.
+    if result is None:
+        raise InvalidWebhookSignatureError("webhook verification returned no payload")
+    return result
 
 
 async def _upsert_user(session: AsyncSession, data: ClerkUserData) -> None:
