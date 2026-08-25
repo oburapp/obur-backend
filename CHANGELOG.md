@@ -75,6 +75,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI (lint, typecheck, the full test suite against a
   real Postgres and Redis, a Docker build) required to pass before
   merging to `main`, and before Railway deploys it
+- `VENUE.district`, required on every newly created venue, per ADR-0009.
+  Unblocks district-scoped badges and ranking later; existing venues
+  stay `NULL`, no backfill
+- Two-layer venue duplicate detection: an exact `google_places_id`
+  match resolves to the existing venue idempotently and isn't
+  bypassable via `confirm_duplicate`, a certain duplicate needs no
+  confirmation prompt. The existing 50-metre radius check is now the
+  fallback for everything without a Google identity to match on
+- `VENUE.is_verified`, cosmetic only, never affects ranking or search.
+  Auto-sets once a venue with a `google_places_id` has 3 independent
+  public check-ins; without one, 5 independent check-ins make a venue
+  eligible for an admin to confirm via the new
+  `POST /admin/venues/{id}/verify`, but check-ins alone never verify it
+- Dependency vulnerability scanning: a `uv audit` job in CI, plus
+  Dependabot covering both Python and GitHub Actions dependencies
 
 
 ### Changed
@@ -102,6 +117,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "translation tables over embedded strings" design existed only on
   paper. Resolution falls back to `DEFAULT_LOCALE` per name, so a
   partially translated catalog degrades to readable instead of blank
+- `VenueResponse.status` (a single string) is replaced by two
+  independent booleans, `is_active` and `is_suspended`, per ADR-0009.
+  "The business closed" and "an admin suspended this listing" aren't
+  the same fact, and a closed venue stays visible (shown transparently)
+  while a suspended one is hidden entirely, RLS included, so collapsing
+  both into one field would have hidden that difference. No venue field
+  is user-editable, including by whoever added it; every correction now
+  goes through the existing report-and-admin-review path
 
 ### Fixed
 

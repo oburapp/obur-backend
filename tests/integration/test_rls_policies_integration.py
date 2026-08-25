@@ -373,3 +373,38 @@ async def test_venue_saves_select_policy_respects_visibility_raw_query(
 
     assert public_save.id in visible_ids
     assert private_save.id not in visible_ids
+
+
+async def test_venues_select_policy_hides_suspended_venue_from_non_admin_but_not_admin(
+    db_session: AsyncSession,
+) -> None:
+    """`venues_select` (migration `f7514fe63beb`, ADR-0009) must keep a
+    suspended venue invisible to anyone but an admin, the same
+    "hidden must be indistinguishable from nonexistent" standard the
+    RLS tables above already enforce, now for moderation state rather
+    than content visibility.
+    """
+    owner = await _create_user(db_session)
+    venue = await _create_venue(db_session, owner)
+
+    admin = await _create_user(db_session, role=UserRole.ADMIN)
+    await set_current_user_identity(db_session, admin.id)
+    await db_session.execute(
+        Venue.__table__.update()  # pyright: ignore[reportAttributeAccessIssue]
+        .where(Venue.id == venue.id)
+        .values(is_suspended=True)
+    )
+
+    regular_viewer = await _create_user(db_session)
+    await set_current_user_identity(db_session, regular_viewer.id)
+    as_regular = (
+        await db_session.execute(select(Venue.id).where(Venue.id == venue.id))
+    ).scalar_one_or_none()
+
+    await set_current_user_identity(db_session, admin.id)
+    as_admin = (
+        await db_session.execute(select(Venue.id).where(Venue.id == venue.id))
+    ).scalar_one_or_none()
+
+    assert as_regular is None
+    assert as_admin == venue.id

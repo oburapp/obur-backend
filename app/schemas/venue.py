@@ -16,6 +16,10 @@ class VenueCreateRequest(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     category_id: UUID
+    # Required from Phase 9 onward regardless of how it was resolved
+    # (Google Places address components via client-side Autocomplete, or
+    # typed by hand in the manual-entry form), see ADR-0009 in obur-docs.
+    district: str = Field(min_length=1, max_length=255)
     address_note: str | None = None
     google_places_id: str | None = None
     city: str | None = None
@@ -33,6 +37,9 @@ class VenueResponse(BaseModel):
     name: str
     lat: float
     lng: float
+    # Null for venues created before Phase 9 shipped, no backfill, see
+    # ADR-0009 in obur-docs.
+    district: str | None
     address_note: str | None
     google_places_id: str | None
     # Null once the account that added this venue has been deleted — the
@@ -47,7 +54,13 @@ class VenueResponse(BaseModel):
     city: str | None
     country_code: str | None
     timezone: str | None
-    status: str
+    # Cosmetic only, never gates discoverability, ranking, or search.
+    is_verified: bool
+    # The business itself has closed, per an admin acting on a report.
+    # Shown transparently rather than hidden, unlike is_suspended, which
+    # RLS already keeps a non-admin caller from ever seeing true for.
+    is_active: bool
+    is_suspended: bool
     created_at: datetime
 
 

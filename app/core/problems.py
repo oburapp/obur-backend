@@ -124,6 +124,12 @@ VENUE_NOT_FOUND = Problem(
     status.HTTP_404_NOT_FOUND,
     "No venue with that id exists.",
 )
+VENUE_NOT_ELIGIBLE_FOR_VERIFICATION = Problem(
+    "venue-not-eligible-for-verification",
+    "Venue not yet eligible for verification",
+    status.HTTP_409_CONFLICT,
+    "This venue hasn't reached the required number of independent check-ins yet.",
+)
 VENUE_SAVE_NOT_FOUND = Problem(
     "venue-save-not-found",
     "Venue save not found",

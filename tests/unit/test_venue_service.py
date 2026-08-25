@@ -45,6 +45,7 @@ async def test_create_venue_raises_when_category_not_found() -> None:
             lng=29.0,
             category_id=uuid4(),
             added_by=uuid4(),
+            district="Kadıköy",
         )
 
     session.add.assert_not_called()
@@ -62,6 +63,7 @@ async def test_create_venue_raises_when_duplicate_within_radius() -> None:
             lng=29.0,
             category_id=uuid4(),
             added_by=uuid4(),
+            district="Kadıköy",
         )
 
     assert exc_info.value.nearby_venue_id == nearby.id
@@ -79,6 +81,7 @@ async def test_create_venue_skips_duplicate_check_when_confirmed() -> None:
         lng=29.0,
         category_id=uuid4(),
         added_by=uuid4(),
+        district="Kadıköy",
         confirm_duplicate=True,
     )
 
@@ -97,6 +100,7 @@ async def test_create_venue_succeeds_with_no_nearby_duplicate() -> None:
         lng=29.0,
         category_id=uuid4(),
         added_by=uuid4(),
+        district="Kadıköy",
     )
 
     assert venue.name == "Karadeniz Pide"

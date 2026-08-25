@@ -20,15 +20,22 @@ from datetime import datetime
 from typing import Any
 
 from geoalchemy2 import Geography
-from sqlalchemy import CHAR, Computed, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import (
+    CHAR,
+    Boolean,
+    Computed,
+    DateTime,
+    Float,
+    ForeignKey,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.geo import WGS84_SRID
 from app.models.base import Base
-
-# Default status for a newly added venue.
-_DEFAULT_VENUE_STATUS = "active"
 
 
 class Venue(Base):
@@ -73,8 +80,33 @@ class Venue(Base):
     city: Mapped[str | None] = mapped_column(String, nullable=True)
     country_code: Mapped[str | None] = mapped_column(CHAR(2), nullable=True)
     timezone: Mapped[str | None] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default=_DEFAULT_VENUE_STATUS
+    # Ilçe / sub-city administrative area. Required for every venue created
+    # from Phase 9 onward (enforced in VenueCreateRequest, not here);
+    # nullable only because venues created before this phase have no
+    # value and there is no backfill (see ADR-0009 in obur-docs).
+    district: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Cosmetic only, never gates discoverability, ranking, or search.
+    # Answers "does this location definitely exist," set automatically
+    # once enough independent public check-ins corroborate it (see
+    # app/services/venue.py) or, with no google_places_id to anchor it,
+    # by an admin. See ADR-0009.
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # The business itself has closed, set only by an admin acting on a
+    # report. Unlike is_suspended, the venue stays fully visible, shown
+    # transparently rather than hidden (see ADR-0009).
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
+    # A separate admin moderation action, unrelated to whether the
+    # business is open. A suspended venue is hidden entirely, its own
+    # page reads as nonexistent to anyone but an admin, the same
+    # "hidden must be indistinguishable from nonexistent" treatment a
+    # blocked profile already gets. Enforced at the RLS layer, not just
+    # the application layer (see migrations and ADR-0016).
+    is_suspended: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

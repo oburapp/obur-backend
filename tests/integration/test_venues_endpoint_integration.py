@@ -42,6 +42,7 @@ async def test_create_venue_then_fetch_it_by_id(
                 "lat": 40.9905,
                 "lng": 29.0234,
                 "category_id": str(_CAFE_CATEGORY_ID),
+                "district": "Kadıköy",
             },
         )
     finally:
@@ -70,6 +71,7 @@ async def test_create_venue_returns_409_when_duplicate_within_50_meters(
                 "lat": 40.9905,
                 "lng": 29.0234,
                 "category_id": str(_CAFE_CATEGORY_ID),
+                "district": "Kadıköy",
             },
         )
         assert first.status_code == 201
@@ -81,6 +83,7 @@ async def test_create_venue_returns_409_when_duplicate_within_50_meters(
                 "lat": 40.99068,
                 "lng": 29.0234,
                 "category_id": str(_CAFE_CATEGORY_ID),
+                "district": "Kadıköy",
             },
         )
     finally:
@@ -104,6 +107,7 @@ async def test_search_venues_over_http_finds_turkish_name(
                 "lat": 40.9905,
                 "lng": 29.0234,
                 "category_id": str(_CAFE_CATEGORY_ID),
+                "district": "Kadıköy",
             },
         )
     finally:
