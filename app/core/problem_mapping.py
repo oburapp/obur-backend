@@ -49,6 +49,7 @@ from app.exceptions import (
     UsernameTakenError,
     VenueCategoryNotFoundError,
     VenueError,
+    VenueNotEligibleForVerificationError,
     VenueNotFoundError,
     VenueSaveNotFoundError,
 )
@@ -85,6 +86,7 @@ DOMAIN_PROBLEMS: dict[type[Exception], Problem] = {
     VenueNotFoundError: problems.VENUE_NOT_FOUND,
     VenueCategoryNotFoundError: problems.VENUE_CATEGORY_NOT_FOUND,
     DuplicateVenueNearbyError: problems.DUPLICATE_VENUE_NEARBY,
+    VenueNotEligibleForVerificationError: problems.VENUE_NOT_ELIGIBLE_FOR_VERIFICATION,
     VenueSaveNotFoundError: problems.VENUE_SAVE_NOT_FOUND,
     NotVenueSaveOwnerError: problems.NOT_RESOURCE_OWNER,
     # Social graph. A like, bookmark, follow, or close-friend link that

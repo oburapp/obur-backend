@@ -26,6 +26,7 @@ from app.exceptions import (
 from app.models.checkin import Checkin
 from app.models.user import User, UserRole
 from app.models.venue import Venue
+from app.services.venue import evaluate_venue_verification
 
 # Fields a check-in's owner (or an admin) may change after creation —
 # see ADR-0011 in obur-docs.
@@ -100,6 +101,13 @@ async def create_checkin(
     session.add(checkin)
     await session.commit()
     await session.refresh(checkin)
+
+    # Only a public check-in can ever count toward venue verification
+    # (see app.services.venue._count_distinct_public_checkin_users),
+    # skip the extra query entirely for anything else, per ADR-0009.
+    if visibility == Visibility.PUBLIC:
+        await evaluate_venue_verification(session, venue_id)
+
     return checkin
 
 

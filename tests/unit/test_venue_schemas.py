@@ -14,6 +14,7 @@ def _payload(**overrides: object) -> dict[str, object]:
         "lat": 41.0,
         "lng": 29.0,
         "category_id": str(uuid4()),
+        "district": "Kadıköy",
     }
     payload.update(overrides)
     return payload

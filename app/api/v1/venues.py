@@ -54,6 +54,7 @@ async def create_venue(
         lng=payload.lng,
         category_id=payload.category_id,
         added_by=current_user.id,
+        district=payload.district,
         address_note=payload.address_note,
         google_places_id=payload.google_places_id,
         city=payload.city,

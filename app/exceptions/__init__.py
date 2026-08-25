@@ -36,6 +36,7 @@ from app.exceptions.venue_exceptions import (
     NotVenueSaveOwnerError,
     VenueCategoryNotFoundError,
     VenueError,
+    VenueNotEligibleForVerificationError,
     VenueNotFoundError,
     VenueSaveNotFoundError,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "UsernameTakenError",
     "VenueCategoryNotFoundError",
     "VenueError",
+    "VenueNotEligibleForVerificationError",
     "VenueNotFoundError",
     "VenueSaveNotFoundError",
 ]

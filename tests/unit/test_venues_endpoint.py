@@ -26,6 +26,7 @@ def _venue(**overrides: object) -> Venue:
         "name": "Karadeniz Pide",
         "lat": 41.0,
         "lng": 29.0,
+        "district": "Kadıköy",
         "address_note": None,
         "google_places_id": None,
         "added_by": _USER.id,
@@ -33,7 +34,9 @@ def _venue(**overrides: object) -> Venue:
         "city": "Istanbul",
         "country_code": "TR",
         "timezone": "Europe/Istanbul",
-        "status": "active",
+        "is_verified": False,
+        "is_active": True,
+        "is_suspended": False,
         "created_at": datetime.now(UTC),
     }
     defaults.update(overrides)
@@ -46,6 +49,7 @@ async def _post_venue(client: AsyncClient, **overrides: object) -> Response:
         "lat": 41.0,
         "lng": 29.0,
         "category_id": str(uuid4()),
+        "district": "Kadıköy",
     }
     payload.update(overrides)
     app.dependency_overrides[get_current_user] = lambda: _USER
