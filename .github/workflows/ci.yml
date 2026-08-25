@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Typecheck
+        run: uv run pyright
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: obur
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U user -d obur"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Same shape as .env.example / docker-compose.yml, values that only
+    # need to exist for CI to boot the app, not real secrets. Kept as
+    # workflow-level env because Settings() has no defaults for these
+    # (app/core/config.py) and a fresh checkout has no .env file.
+    env:
+      ENVIRONMENT: test
+      CORS_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/obur
+      APP_DATABASE_URL: postgresql+asyncpg://obur_app:ci-only-not-a-real-secret@localhost:5432/obur
+      APP_DB_ROLE_PASSWORD: ci-only-not-a-real-secret
+      REDIS_URL: redis://localhost:6379/0
+      CLERK_SECRET_KEY: sk_test_fake_for_ci
+      RATE_LIMIT_SECRET: ci-only-not-a-real-secret
+      TRUSTED_PROXY_COUNT: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # Mirrors docker/postgres-init/*.sql, which only runs on local
+      # docker-compose's first container start. The postgis/postgis image
+      # auto-installs PostGIS (plus tiger_geocoder/topology, dropped below)
+      # on the primary POSTGRES_DB already; obur_test is a second database
+      # tests/conftest.py derives by suffixing DATABASE_URL, so it needs
+      # the same extension setup done explicitly here.
+      - name: Create test database
+        run: |
+          PGPASSWORD=password psql -h localhost -U user -d obur -c "CREATE DATABASE obur_test"
+          PGPASSWORD=password psql -h localhost -U user -d obur_test -c "CREATE EXTENSION IF NOT EXISTS postgis"
+          PGPASSWORD=password psql -h localhost -U user -d obur_test -c "DROP EXTENSION IF EXISTS postgis_tiger_geocoder CASCADE"
+          PGPASSWORD=password psql -h localhost -U user -d obur_test -c "DROP EXTENSION IF EXISTS postgis_topology CASCADE"
+
+      # Applies migrations to obur_test itself (tests/integration/conftest.py's
+      # autouse fixture), including the RLS/role-creation chain, before any
+      # test runs.
+      - name: Test
+        run: uv run pytest --cov --cov-report=term-missing
+
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pure regression guard: the app doesn't deploy from here, Railway
+      # builds its own image straight from this same Dockerfile. This just
+      # catches a broken Dockerfile at PR time instead of at deploy time,
+      # the way a syntax error in the RUN --mount lines once was (Railway's
+      # builder rejected bind mounts and required a per-deploy cache-mount
+      # id the Dockerfile can't know ahead of time, see docs/deployment.md).
+      - name: Build image
+        run: docker build -t obur-backend:ci .

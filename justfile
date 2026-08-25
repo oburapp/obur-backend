@@ -20,6 +20,10 @@ lint:
 format:
     uv run ruff format .
 
+# Check formatting without modifying anything (what CI runs)
+format-check:
+    uv run ruff format --check .
+
 # Type-check the codebase
 typecheck:
     uv run pyright
@@ -28,8 +32,8 @@ typecheck:
 test:
     uv run pytest --cov --cov-report=term-missing
 
-# Run lint + typecheck + test — the same checks CI will run
-check: lint typecheck test
+# Run lint + format-check + typecheck + test, the same checks CI runs
+check: lint format-check typecheck test
 
 # --- Local infrastructure ---
 
