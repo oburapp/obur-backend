@@ -141,6 +141,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   all in-process: after the test suite migrated, nothing in `app/`
   logged anything again. `disable_existing_loggers=False` in
   `migrations/env.py`
+
+### Security
+
+- RLS on `checkin_likes`, `list_likes`, `checkin_bookmarks`, and
+  `list_bookmarks` now also checks that the inserter can see the checkin
+  or list they're attaching the row to, not only that they are who they
+  claim to be. The application layer already enforced this, so no
+  legitimate flow changes; this closes the same gap at the database
+  layer that RLS exists to close everywhere else, rather than leaving it
+  resting on the ORM's insert path issuing `RETURNING`
+
 ## [0.6.0] - 2026-08-24
 
 ### Added

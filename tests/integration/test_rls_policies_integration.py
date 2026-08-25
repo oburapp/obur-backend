@@ -28,13 +28,19 @@ merely green.
 from datetime import date
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import clear_current_user_identity, set_current_user_identity
 from app.core.visibility import Visibility
 from app.models.checkin import Checkin
+from app.models.checkin_bookmark import CheckinBookmark
+from app.models.checkin_like import CheckinLike
 from app.models.list import List
+from app.models.list_bookmark import ListBookmark
+from app.models.list_like import ListLike
 from app.models.user import User, UserRole
 from app.models.venue import Venue
 from app.models.venue_save import VenueSave
@@ -408,3 +414,135 @@ async def test_venues_select_policy_hides_suspended_venue_from_non_admin_but_not
 
     assert as_regular is None
     assert as_admin == venue.id
+
+
+async def test_checkin_likes_insert_policy_rejects_a_stranger_liking_a_private_checkin(
+    db_session: AsyncSession,
+) -> None:
+    """Migration f5238636a778: `checkin_likes_insert` now also requires
+    `rls_can_view_checkin`, not just `rls_is_owner_or_admin(user_id)`. A
+    raw `INSERT`, not `app.services.like.like_checkin`, so this proves
+    the policy itself works even if that service's own visibility check
+    were ever bypassed or a future bulk-insert path skipped it (see the
+    migration's own docstring for why that isn't only theoretical).
+    """
+    owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
+    venue = await _create_venue(db_session, owner)
+    private_checkin = await _create_checkin(
+        db_session, owner, venue, visibility=Visibility.PRIVATE
+    )
+
+    stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, stranger.id)
+
+    with pytest.raises(ProgrammingError, match="row-level security"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                CheckinLike.__table__.insert().values(  # pyright: ignore[reportAttributeAccessIssue]
+                    user_id=stranger.id, checkin_id=private_checkin.id
+                )
+            )
+
+    remaining = (
+        await db_session.execute(
+            select(CheckinLike.checkin_id).where(
+                CheckinLike.checkin_id == private_checkin.id
+            )
+        )
+    ).scalar_one_or_none()
+    assert remaining is None
+
+
+async def test_list_likes_insert_policy_rejects_a_stranger_liking_a_private_list(
+    db_session: AsyncSession,
+) -> None:
+    """Same fix as the check-in test above, `list_likes_insert` this
+    time, tested separately because each is its own `ALTER POLICY`
+    statement, a copy-paste mistake on one wouldn't show up testing only
+    the other.
+    """
+    owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
+    private_list = await list_service.create_list(
+        db_session, user_id=owner.id, title="Gizli", visibility=Visibility.PRIVATE
+    )
+
+    stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, stranger.id)
+
+    with pytest.raises(ProgrammingError, match="row-level security"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                ListLike.__table__.insert().values(  # pyright: ignore[reportAttributeAccessIssue]
+                    user_id=stranger.id, list_id=private_list.id
+                )
+            )
+
+    remaining = (
+        await db_session.execute(
+            select(ListLike.list_id).where(ListLike.list_id == private_list.id)
+        )
+    ).scalar_one_or_none()
+    assert remaining is None
+
+
+async def test_checkin_bookmarks_insert_rejects_stranger_bookmarking_a_private_checkin(
+    db_session: AsyncSession,
+) -> None:
+    """Same fix, `checkin_bookmarks_insert`."""
+    owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
+    venue = await _create_venue(db_session, owner)
+    private_checkin = await _create_checkin(
+        db_session, owner, venue, visibility=Visibility.PRIVATE
+    )
+
+    stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, stranger.id)
+
+    with pytest.raises(ProgrammingError, match="row-level security"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                CheckinBookmark.__table__.insert().values(  # pyright: ignore[reportAttributeAccessIssue]
+                    user_id=stranger.id, checkin_id=private_checkin.id
+                )
+            )
+
+    remaining = (
+        await db_session.execute(
+            select(CheckinBookmark.checkin_id).where(
+                CheckinBookmark.checkin_id == private_checkin.id
+            )
+        )
+    ).scalar_one_or_none()
+    assert remaining is None
+
+
+async def test_list_bookmarks_insert_rejects_a_stranger_bookmarking_a_private_list(
+    db_session: AsyncSession,
+) -> None:
+    """Same fix, `list_bookmarks_insert`."""
+    owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
+    private_list = await list_service.create_list(
+        db_session, user_id=owner.id, title="Gizli", visibility=Visibility.PRIVATE
+    )
+
+    stranger = await _create_user(db_session)
+    await set_current_user_identity(db_session, stranger.id)
+
+    with pytest.raises(ProgrammingError, match="row-level security"):
+        async with db_session.begin_nested():
+            await db_session.execute(
+                ListBookmark.__table__.insert().values(  # pyright: ignore[reportAttributeAccessIssue]
+                    user_id=stranger.id, list_id=private_list.id
+                )
+            )
+
+    remaining = (
+        await db_session.execute(
+            select(ListBookmark.list_id).where(ListBookmark.list_id == private_list.id)
+        )
+    ).scalar_one_or_none()
+    assert remaining is None
