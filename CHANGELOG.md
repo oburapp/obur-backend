@@ -59,6 +59,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VenueResponse.category_name`, resolved per request beside the raw
   `category_id`. One catalog lookup per request regardless of how many
   venues come back
+- Two-role database architecture and Row Level Security on every table,
+  per ADR-0016. The API now connects as a least-privilege `obur_app`
+  role instead of the table owner, which PostgreSQL exempts from its
+  own policies, so a policy re-expressing `can_view` in SQL is a real
+  second layer, one that survives a query that forgot to call it, not
+  just the same rule written twice
+- Production deployment on Railway: backend, PostgreSQL+PostGIS, and
+  Redis all live in EU West, per `docs/deployment.md`. Migrations run
+  via a Pre-deploy Command before a new version takes traffic, so a
+  broken migration stops the deploy instead of reaching production
+- The Clerk webhook is registered against the live deployed URL, open
+  since Phase 1 for want of a public URL. `user.created`/`updated`/
+  `deleted` now actually sync, not just build and pass unit tests
+- GitHub Actions CI (lint, typecheck, the full test suite against a
+  real Postgres and Redis, a Docker build) required to pass before
+  merging to `main`, and before Railway deploys it
 
 
 ### Changed

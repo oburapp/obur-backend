@@ -18,6 +18,10 @@ Only open individual ADR files when the relevant topic comes up — not all at o
 
 For build order and current phase, see [docs/roadmap.md](docs/roadmap.md).
 
+For the current OWASP-mapped security posture (what's covered, what
+isn't, why), see [docs/threat-model.md](docs/threat-model.md). Re-check
+it when a phase changes the attack surface, not on a fixed schedule.
+
 Common commands are wrapped in the `justfile` — run `just --list` to see
 them (lint, format, typecheck, test, `check` for all three, `up`/`down`
 for local infra, `migrate`/`migration`). See [obur-docs/CLAUDE.md](https://github.com/oburapp/obur-docs/blob/main/CLAUDE.md#task-runner)
@@ -364,6 +368,14 @@ async def test_checkin(): ...
 - Never expose stack traces or internal error details to clients
 - Never log sensitive data
 - API keys always read from environment — never hardcoded
+- **Every new table gets Row Level Security policies, no exceptions
+  without a written justification** (platform-wide counts, admin
+  tooling) in the migration itself, per
+  [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md)
+  and the Standing Rules in [docs/roadmap.md](docs/roadmap.md). This is
+  the layer that survives a query forgetting to call `can_view`; skipping
+  it "for now" reopens exactly the gap it exists to close. Not a later
+  cleanup pass.
 
 ---
 
