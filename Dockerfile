@@ -10,16 +10,17 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Dependencies first, in their own layer keyed only on the lockfile — a
-# code-only change then skips reinstalling every dependency.
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
+# code-only change then skips reinstalling every dependency. No
+# --mount=type=cache here: Railway's builder rejects cache mount ids
+# without a platform-specific prefix it doesn't document, so this trades
+# a warmer uv cache between builds for a Dockerfile that actually builds.
+RUN --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
 
 COPY . /app
 
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
+RUN uv sync --locked --no-dev
 
 FROM python:3.12-slim-bookworm
 
