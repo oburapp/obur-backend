@@ -10,13 +10,13 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Dependencies first, in their own layer keyed only on the lockfile — a
-# code-only change then skips reinstalling every dependency. No
-# --mount=type=cache here: Railway's builder rejects cache mount ids
-# without a platform-specific prefix it doesn't document, so this trades
-# a warmer uv cache between builds for a Dockerfile that actually builds.
-RUN --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project --no-dev
+# code-only change then skips reinstalling every dependency. Plain COPY,
+# not --mount=type=bind/cache: Railway's builder doesn't support bind
+# mounts at all, and its cache mounts require a Railway service id
+# hardcoded into the id argument, which would tie this file to one
+# specific deployment. Not worth it for a build-speed optimization.
+COPY uv.lock pyproject.toml ./
+RUN uv sync --locked --no-install-project --no-dev
 
 COPY . /app
 
