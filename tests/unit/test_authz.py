@@ -4,12 +4,14 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from pytest_mock import MockerFixture
 
 from app.core import problems
 from app.core.authz import (
     can_view,
     close_friend_of_owner_exists,
     ensure_visible_and_owned,
+    is_blocked_between,
     is_close_friend,
     is_owner_or_admin,
     require_admin,
@@ -23,6 +25,17 @@ from app.models.user import User, UserRole
 
 def _user(role: str = UserRole.USER) -> User:
     return User(id=uuid4(), auth_provider="clerk", auth_provider_id="x", role=role)
+
+
+def _not_blocked(mocker: MockerFixture) -> None:
+    """Patch `is_blocked_between` to report no block. `can_view` now
+    calls it for any non-owner, non-admin viewer, which a bare
+    `AsyncMock()` session isn't set up to answer correctly (its
+    `execute()` return value defaults to a truthy `MagicMock`, which
+    would otherwise make every one of these tests see a block that
+    isn't there). Tests about blocking itself patch it directly instead.
+    """
+    mocker.patch("app.core.authz.is_blocked_between", AsyncMock(return_value=False))
 
 
 def test_is_owner_or_admin_true_for_the_owner() -> None:
@@ -80,6 +93,26 @@ async def test_is_close_friend_false_when_no_row_exists() -> None:
     assert await is_close_friend(session, owner_id=uuid4(), viewer_id=uuid4()) is False
 
 
+def _session_with_block_result(*, blocked: bool) -> AsyncMock:
+    session = AsyncMock()
+    result = MagicMock()
+    result.scalar_one.return_value = blocked
+    session.execute.return_value = result
+    return session
+
+
+async def test_is_blocked_between_true_when_the_function_says_so() -> None:
+    session = _session_with_block_result(blocked=True)
+
+    assert await is_blocked_between(session, uuid4(), uuid4()) is True
+
+
+async def test_is_blocked_between_false_when_the_function_says_so() -> None:
+    session = _session_with_block_result(blocked=False)
+
+    assert await is_blocked_between(session, uuid4(), uuid4()) is False
+
+
 async def test_can_view_true_for_the_owner_regardless_of_visibility() -> None:
     owner = _user()
     session = AsyncMock()
@@ -122,7 +155,10 @@ async def test_can_view_false_for_private_with_no_viewer() -> None:
     assert result is False
 
 
-async def test_can_view_false_for_private_with_a_stranger_viewer() -> None:
+async def test_can_view_false_for_private_with_a_stranger_viewer(
+    mocker: MockerFixture,
+) -> None:
+    _not_blocked(mocker)
     session = AsyncMock()
 
     result = await can_view(
@@ -142,7 +178,10 @@ async def test_can_view_false_for_close_friends_with_no_viewer() -> None:
     assert result is False
 
 
-async def test_can_view_true_for_close_friends_when_viewer_is_a_close_friend() -> None:
+async def test_can_view_true_for_close_friends_when_viewer_is_a_close_friend(
+    mocker: MockerFixture,
+) -> None:
+    _not_blocked(mocker)
     session = _session_with_close_friend_result(found=True)
 
     result = await can_view(
@@ -155,9 +194,10 @@ async def test_can_view_true_for_close_friends_when_viewer_is_a_close_friend() -
     assert result is True
 
 
-async def test_can_view_false_for_close_friends_when_viewer_is_not_a_close_friend() -> (
-    None
-):
+async def test_can_view_false_for_close_friends_when_viewer_is_not_a_close_friend(
+    mocker: MockerFixture,
+) -> None:
+    _not_blocked(mocker)
     session = _session_with_close_friend_result(found=False)
 
     result = await can_view(
@@ -170,15 +210,35 @@ async def test_can_view_false_for_close_friends_when_viewer_is_not_a_close_frien
     assert result is False
 
 
-async def test_can_view_false_for_an_unrecognized_visibility_value() -> None:
+async def test_can_view_false_for_an_unrecognized_visibility_value(
+    mocker: MockerFixture,
+) -> None:
     """Defense in depth: `visibility` is constrained to the three known
     tiers by a DB CHECK constraint, but `can_view` itself must still
     fail closed (deny, not crash) if it ever sees anything else.
     """
+    _not_blocked(mocker)
     session = AsyncMock()
 
     result = await can_view(
         session, owner_id=uuid4(), visibility="not_a_real_tier", viewer=_user()
+    )
+
+    assert result is False
+
+
+async def test_can_view_false_when_blocked_even_for_public_visibility(
+    mocker: MockerFixture,
+) -> None:
+    """PDD §11: a block overrides all three visibility tiers, `public`
+    included, the one case `can_view` checks before looking at
+    `visibility` at all.
+    """
+    mocker.patch("app.core.authz.is_blocked_between", AsyncMock(return_value=True))
+    session = AsyncMock()
+
+    result = await can_view(
+        session, owner_id=uuid4(), visibility=Visibility.PUBLIC, viewer=_user()
     )
 
     assert result is False
@@ -200,7 +260,10 @@ async def test_ensure_visible_and_owned_returns_silently_for_the_owner() -> None
     )
 
 
-async def test_ensure_visible_and_owned_raises_not_found_when_invisible() -> None:
+async def test_ensure_visible_and_owned_raises_not_found_when_invisible(
+    mocker: MockerFixture,
+) -> None:
+    _not_blocked(mocker)
     session = AsyncMock()
 
     with pytest.raises(CheckinNotFoundError):
@@ -216,10 +279,13 @@ async def test_ensure_visible_and_owned_raises_not_found_when_invisible() -> Non
         )
 
 
-async def test_ensure_visible_and_owned_raises_not_owner_when_visible() -> None:
+async def test_ensure_visible_and_owned_raises_not_owner_when_visible(
+    mocker: MockerFixture,
+) -> None:
     """A stranger acting on PUBLIC content they don't own gets the
-    ordinary 403 — the existence-leak guard must not swallow this case.
+    ordinary 403, the existence-leak guard must not swallow this case.
     """
+    _not_blocked(mocker)
     session = AsyncMock()
 
     with pytest.raises(NotCheckinOwnerError):

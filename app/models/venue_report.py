@@ -20,6 +20,7 @@ wrong.
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -56,6 +57,13 @@ _ALLOWED_REASONS = (
     VenueReportReason.DUPLICATE,
     VenueReportReason.OTHER,
 )
+
+# Kept in sync with `VenueReportReason` by
+# `test_venue_report_reason_literal_matches_class`, the same PEP 586
+# constraint `app.core.visibility.VisibilityValue` already documents.
+VenueReportReasonValue = Literal[
+    "wrong_address", "wrong_name", "permanently_closed", "duplicate", "other"
+]
 
 _ALLOWED_STATUSES = (
     ReportStatus.PENDING,

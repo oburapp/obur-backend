@@ -10,6 +10,7 @@ from app.exceptions import (
     AccountNotFrozenError,
     UsernameChangedTooRecentlyError,
     UsernameTakenError,
+    UserNotFoundError,
 )
 from app.models.user import User, UserRole, UserStatus
 from app.services import user as user_service
@@ -187,6 +188,35 @@ async def test_reactivate_account_is_a_no_op_when_already_active() -> None:
     await user_service.reactivate_account(session, user=user)
 
     session.commit.assert_not_awaited()
+
+
+async def test_suspend_account_suspends_an_active_account() -> None:
+    session = AsyncMock()
+    user = _user(status=UserStatus.ACTIVE)
+    session.get = AsyncMock(return_value=user)
+
+    suspended = await user_service.suspend_account(session, user.id)
+
+    assert suspended.status == UserStatus.SUSPENDED
+    session.commit.assert_awaited_once()
+
+
+async def test_suspend_account_is_idempotent() -> None:
+    session = AsyncMock()
+    user = _user(status=UserStatus.SUSPENDED)
+    session.get = AsyncMock(return_value=user)
+
+    await user_service.suspend_account(session, user.id)
+
+    session.commit.assert_not_awaited()
+
+
+async def test_suspend_account_raises_when_not_found() -> None:
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=None)
+
+    with pytest.raises(UserNotFoundError):
+        await user_service.suspend_account(session, uuid4())
 
 
 async def test_reactivate_account_refuses_a_suspended_account() -> None:

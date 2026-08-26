@@ -289,13 +289,17 @@ async def test_block_does_not_hide_content_from_admin_or_from_the_owner_themselv
     assert visible_to_admin is not None
 
 
-async def test_block_hides_the_blocked_persons_profile_and_back(
+async def test_block_hides_each_persons_profile_from_the_other_via_plain_query(
     db_session: AsyncSession,
 ) -> None:
-    """`users_select` (currently open to everyone) must also treat a
-    blocked profile as nonexistent to the other party, both directions,
-    per PDD §11's "a blocked profile behaves exactly like a nonexistent
-    one".
+    """`users_select` treats both profiles as nonexistent to each other,
+    fully symmetric, per PDD §11's "a blocked profile behaves exactly
+    like a nonexistent one". No exception for the blocker either: a
+    plain query is not how a blocker sees who they've blocked, that
+    goes through the narrow `rls_list_blocked_users` function instead
+    (migration `f1d017015e34`, tested against the real service in
+    tests/integration/test_block_integration.py), which never widens
+    `users_select` itself.
     """
     blocker = await _create_user(db_session)
     blocked = await _create_user(db_session)

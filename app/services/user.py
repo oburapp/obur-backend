@@ -27,6 +27,7 @@ from app.exceptions import (
     AccountNotFrozenError,
     UsernameChangedTooRecentlyError,
     UsernameTakenError,
+    UserNotFoundError,
 )
 from app.models.user import User, UserStatus
 
@@ -136,6 +137,24 @@ async def reactivate_account(session: AsyncSession, *, user: User) -> User:
     user.status = UserStatus.ACTIVE
     await session.commit()
     await session.refresh(user)
+    return user
+
+
+async def suspend_account(session: AsyncSession, user_id: uuid.UUID) -> User:
+    """Suspend an account. Admin-only (see `app.core.authz.require_admin`
+    on the route this backs) and never user-reversible, the one status
+    `reactivate_account` explicitly refuses to undo (PDD §6, §11).
+    Idempotent.
+
+    Raises `UserNotFoundError` if `user_id` doesn't exist.
+    """
+    user = await session.get(User, user_id)
+    if user is None:
+        raise UserNotFoundError(f"user not found: {user_id}")
+    if user.status != UserStatus.SUSPENDED:
+        user.status = UserStatus.SUSPENDED
+        await session.commit()
+        await session.refresh(user)
     return user
 
 

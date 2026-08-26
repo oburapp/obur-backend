@@ -11,7 +11,13 @@ from app.exceptions.checkin_exceptions import (
     FutureVisitDateError,
     NotCheckinOwnerError,
 )
+from app.exceptions.report_exceptions import (
+    ContentReportNotFoundError,
+    ReportError,
+    VenueReportNotFoundError,
+)
 from app.exceptions.social_exceptions import (
+    BlockNotFoundError,
     BookmarkNotFoundError,
     CloseFriendNotFoundError,
     DuplicateListItemError,
@@ -20,9 +26,12 @@ from app.exceptions.social_exceptions import (
     ListError,
     ListItemNotFoundError,
     ListNotFoundError,
+    MuteNotFoundError,
     NotAFollowerError,
     NotListOwnerError,
+    SelfBlockError,
     SelfFollowError,
+    SelfMuteError,
     SocialError,
 )
 from app.exceptions.user_exceptions import (
@@ -30,6 +39,7 @@ from app.exceptions.user_exceptions import (
     UserError,
     UsernameChangedTooRecentlyError,
     UsernameTakenError,
+    UserNotFoundError,
 )
 from app.exceptions.venue_exceptions import (
     DuplicateVenueNearbyError,
@@ -44,10 +54,12 @@ from app.exceptions.venue_exceptions import (
 __all__ = [
     "AccountNotFrozenError",
     "AuthError",
+    "BlockNotFoundError",
     "BookmarkNotFoundError",
     "CheckinError",
     "CheckinNotFoundError",
     "CloseFriendNotFoundError",
+    "ContentReportNotFoundError",
     "DuplicateListItemError",
     "DuplicateVenueNearbyError",
     "FollowNotFoundError",
@@ -58,18 +70,24 @@ __all__ = [
     "ListError",
     "ListItemNotFoundError",
     "ListNotFoundError",
+    "MuteNotFoundError",
     "NotAFollowerError",
     "NotCheckinOwnerError",
     "NotListOwnerError",
     "NotVenueSaveOwnerError",
+    "ReportError",
+    "SelfBlockError",
     "SelfFollowError",
+    "SelfMuteError",
     "SocialError",
     "UserError",
+    "UserNotFoundError",
     "UsernameChangedTooRecentlyError",
     "UsernameTakenError",
     "VenueCategoryNotFoundError",
     "VenueError",
     "VenueNotEligibleForVerificationError",
     "VenueNotFoundError",
+    "VenueReportNotFoundError",
     "VenueSaveNotFoundError",
 ]

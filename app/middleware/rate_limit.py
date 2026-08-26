@@ -52,14 +52,18 @@ BASELINE_LIMIT = 600
 STRICT_LIMIT = 30
 
 # Routes whose repeated abuse damages data rather than merely costing
-# bandwidth: rating manipulation, spam venues, follow-spam. Report
-# submission joins them when it exists (Phase 10). Matched on the route
-# template, so path parameters don't fragment the rule.
+# bandwidth: rating manipulation, spam venues, follow-spam, and now
+# report submission (Phase 10): unlimited reporting is itself an abuse
+# vector (PDD §17). Matched on the route template, so path parameters
+# don't fragment the rule.
 STRICT_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/api/v1/checkins"),
         ("POST", "/api/v1/venues"),
         ("POST", "/api/v1/users/{user_id}/follow"),
+        ("POST", "/api/v1/checkins/{checkin_id}/report"),
+        ("POST", "/api/v1/users/{user_id}/report"),
+        ("POST", "/api/v1/venues/{venue_id}/report"),
     }
 )
 

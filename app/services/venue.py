@@ -224,6 +224,42 @@ async def verify_venue_by_admin(session: AsyncSession, venue_id: uuid.UUID) -> V
     return venue
 
 
+async def close_venue(session: AsyncSession, venue_id: uuid.UUID) -> Venue:
+    """Mark a venue permanently closed. Stays visible, shown
+    transparently as closed, unlike suspension (PDD §13, ADR-0010's
+    venue-report resolution: "wrong address, wrong name, permanently
+    closed, duplicate" all resolve here, or by dismissing the report).
+    Idempotent.
+
+    Raises `VenueNotFoundError` if `venue_id` doesn't exist.
+    """
+    venue = await get_venue(session, venue_id)
+    if not venue.is_active:
+        return venue
+    venue.is_active = False
+    await session.commit()
+    await session.refresh(venue)
+    return venue
+
+
+async def suspend_venue(session: AsyncSession, venue_id: uuid.UUID) -> Venue:
+    """Suspend a venue: hidden entirely, RLS included (`venues_select`,
+    migration f7514fe63beb), unlike closing. For listings that never
+    should have existed rather than businesses that shut down. Admin-only
+    and never user-reversible, same standing as account suspension
+    (PDD §11, §13). Idempotent.
+
+    Raises `VenueNotFoundError` if `venue_id` doesn't exist.
+    """
+    venue = await get_venue(session, venue_id)
+    if venue.is_suspended:
+        return venue
+    venue.is_suspended = True
+    await session.commit()
+    await session.refresh(venue)
+    return venue
+
+
 async def get_venue(session: AsyncSession, venue_id: uuid.UUID) -> Venue:
     """Return a venue by id.
 

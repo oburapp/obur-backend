@@ -103,7 +103,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free-text field, required only when `reason` is `other` (a correlated
   `CHECK`); `sexual_content` is renamed to the broader
   `sensitive_content`
-
+- Block and mute services and endpoints (Phase 10, Part 2 of 3):
+  `POST/DELETE /users/{id}/block`, `GET /users/me/blocks`, and the same
+  shape for mutes. Blocking auto-unfollows in both directions and purges
+  existing likes, bookmarks, and notifications between the two people,
+  through a new `rls_purge_interactions_between` `SECURITY DEFINER`
+  function, RLS would otherwise block removing the other party's own
+  rows. `can_view` gains the same blocking check RLS already enforces,
+  for symmetry. `users_select` itself stays fully mutual, no exception;
+  a blocker's own blocklist screen goes through a new, narrow
+  `rls_list_blocked_users` function instead, scoped to exactly that one
+  query and reading the caller's identity internally rather than
+  trusting a passed-in id
+- Reporting and the admin moderation surface (Phase 10, Part 3 of 3):
+  `POST /checkins/{id}/report`, `/users/{id}/report`, and
+  `/venues/{id}/report`, each rate-limited under the strict tier.
+  Reporting a checkin goes through the same visibility check as liking
+  one; reporting a user deliberately skips any existence check, since
+  `users_select`'s blocking guard would otherwise let a person block
+  their way out of being reported, contradicting PDD §11's guarantee
+  that a reported user can always be blocked and reported regardless of
+  what they do. New admin endpoints: `GET/POST /admin/content-reports`
+  and `/admin/venue-reports` (list, dismiss, action), plus
+  `POST /admin/venues/{id}/close`, `/suspend`, and
+  `/admin/users/{id}/suspend`, none reversible by the affected user.
+  Report resolution stays a separate endpoint from `purge_checkin`
+  rather than one combined action, so an admin can act on a report
+  without that action also implying content deletion. The admin router
+  is now `include_in_schema=False`: `require_admin` is still the real
+  boundary, this only keeps the routes out of the public `/docs` a
+  web or mobile client has no reason to browse
 
 ### Changed
 

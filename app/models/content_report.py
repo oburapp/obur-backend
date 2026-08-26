@@ -28,6 +28,7 @@ Part 3 adds one, not to the column itself.
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -59,6 +60,13 @@ _ALLOWED_TARGET_TYPES = (
     ContentReportTargetType.USER,
 )
 
+# PEP 586 only allows literal expressions (not attribute references, even
+# to a `Final`-typed class member) as `Literal[...]` arguments, the same
+# constraint `app.core.visibility.VisibilityValue` already documents. A
+# `test_content_report_target_type_literal_matches_class` unit test keeps
+# the two in sync instead.
+ContentReportTargetTypeValue = Literal["checkin", "user"]
+
 
 class ContentReportReason:
     """Allowed values for `ContentReport.reason`, matching the categories
@@ -84,6 +92,19 @@ _ALLOWED_REASONS = (
     ContentReportReason.FAKE_ACCOUNT,
     ContentReportReason.OTHER,
 )
+
+# Kept in sync with `ContentReportReason` by
+# `test_content_report_reason_literal_matches_class`, the same PEP 586
+# constraint `ContentReportTargetTypeValue` above documents.
+ContentReportReasonValue = Literal[
+    "spam",
+    "harassment",
+    "hate_speech",
+    "sensitive_content",
+    "violence",
+    "fake_account",
+    "other",
+]
 
 _ALLOWED_STATUSES = (
     ReportStatus.PENDING,
