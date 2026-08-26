@@ -154,6 +154,24 @@ RELATIONSHIP_NOT_FOUND = Problem(
     status.HTTP_404_NOT_FOUND,
     "That relationship does not exist.",
 )
+CONTENT_REPORT_NOT_FOUND = Problem(
+    "content-report-not-found",
+    "Content report not found",
+    status.HTTP_404_NOT_FOUND,
+    "No content report with that id exists.",
+)
+VENUE_REPORT_NOT_FOUND = Problem(
+    "venue-report-not-found",
+    "Venue report not found",
+    status.HTTP_404_NOT_FOUND,
+    "No venue report with that id exists.",
+)
+USER_NOT_FOUND = Problem(
+    "user-not-found",
+    "User not found",
+    status.HTTP_404_NOT_FOUND,
+    "No user with that id exists.",
+)
 
 # --- Authorisation ---------------------------------------------------------
 NOT_RESOURCE_OWNER = Problem(
@@ -232,6 +250,18 @@ NOT_A_FOLLOWER = Problem(
     "That user does not follow you",
     status.HTTP_422_UNPROCESSABLE_CONTENT,
     "That user does not follow you.",
+)
+SELF_BLOCK = Problem(
+    "self-block",
+    "Cannot block yourself",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "You cannot block your own account.",
+)
+SELF_MUTE = Problem(
+    "self-mute",
+    "Cannot mute yourself",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "You cannot mute your own account.",
 )
 
 # --- Too many requests -----------------------------------------------------

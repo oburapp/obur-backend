@@ -14,7 +14,7 @@ obur-backend/
 │   ├── api/
 │   │   └── v1/
 │   │       ├── __init__.py
-│   │       ├── admin.py           # moderation surface, grows in Phase 10
+│   │       ├── admin.py           # moderation surface
 │   │       ├── checkins.py
 │   │       ├── close_friends.py
 │   │       ├── follows.py
@@ -25,9 +25,9 @@ obur-backend/
 │   │       ├── venues.py
 │   │       ├── webhooks.py
 │   │       ├── venue_categories.py
-│   │       ├── blocks.py          # (Phase 10)
-│   │       ├── mutes.py           # (Phase 10)
-│   │       ├── reports.py         # (Phase 10)
+│   │       ├── blocks.py
+│   │       ├── mutes.py
+│   │       ├── reports.py
 │   │       ├── checkin_drafts.py  # (Phase 11)
 │   │       ├── hashtags.py        # (Phase 12)
 │   │       ├── badges.py          # (Phase 14)

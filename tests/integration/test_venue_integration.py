@@ -547,3 +547,51 @@ async def test_verify_venue_by_admin_raises_below_threshold(
 
     with pytest.raises(VenueNotEligibleForVerificationError):
         await venue_service.verify_venue_by_admin(db_session, venue.id)
+
+
+async def test_close_venue_sets_is_active_false_and_stays_idempotent(
+    db_session: AsyncSession,
+) -> None:
+    owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
+    venue = await venue_service.create_venue(
+        db_session,
+        name="Kadıköy Kahve Durağı",
+        lat=_LAT,
+        lng=_LNG,
+        category_id=_CAFE_CATEGORY_ID,
+        added_by=owner.id,
+        district="Kadıköy",
+    )
+
+    admin = await _create_user(db_session, role=UserRole.ADMIN)
+    await set_current_user_identity(db_session, admin.id)
+    closed = await venue_service.close_venue(db_session, venue.id)
+    assert closed.is_active is False
+
+    closed_again = await venue_service.close_venue(db_session, venue.id)
+    assert closed_again.is_active is False
+
+
+async def test_suspend_venue_sets_is_suspended_true_and_stays_idempotent(
+    db_session: AsyncSession,
+) -> None:
+    owner = await _create_user(db_session)
+    await set_current_user_identity(db_session, owner.id)
+    venue = await venue_service.create_venue(
+        db_session,
+        name="Kadıköy Kahve Durağı",
+        lat=_LAT,
+        lng=_LNG,
+        category_id=_CAFE_CATEGORY_ID,
+        added_by=owner.id,
+        district="Kadıköy",
+    )
+
+    admin = await _create_user(db_session, role=UserRole.ADMIN)
+    await set_current_user_identity(db_session, admin.id)
+    suspended = await venue_service.suspend_venue(db_session, venue.id)
+    assert suspended.is_suspended is True
+
+    suspended_again = await venue_service.suspend_venue(db_session, venue.id)
+    assert suspended_again.is_suspended is True

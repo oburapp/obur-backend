@@ -57,3 +57,26 @@ class LikeNotFoundError(SocialError):
 
 class BookmarkNotFoundError(SocialError):
     """Raised when unbookmarking something that wasn't bookmarked."""
+
+
+class SelfBlockError(SocialError):
+    """Raised when a user tries to block themselves."""
+
+
+class BlockNotFoundError(SocialError):
+    """Raised when the given block relationship doesn't exist. Unlike
+    `follows`/`close_friends`, only the blocker's own identity can ever
+    reach this check (PDD §11: unblocking is the blocker's action
+    alone), so there's no separate "wrong actor" case to distinguish:
+    `blocks_delete`'s RLS policy (blocker-or-admin only, not widened
+    the way `follows_delete` is) already makes that the only shape of
+    request that reaches the service layer at all.
+    """
+
+
+class SelfMuteError(SocialError):
+    """Raised when a user tries to mute themselves."""
+
+
+class MuteNotFoundError(SocialError):
+    """Raised when the given mute relationship doesn't exist."""

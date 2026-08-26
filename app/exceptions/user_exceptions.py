@@ -29,3 +29,9 @@ class AccountNotFrozenError(UserError):
     frozen. A suspended account is deliberately not reactivatable this
     way: suspension is admin-only and never user-reversible (PDD §11).
     """
+
+
+class UserNotFoundError(UserError):
+    """Raised when a user id doesn't match any row: an admin action
+    (e.g. suspension) on an id that doesn't exist.
+    """

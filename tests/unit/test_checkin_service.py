@@ -6,6 +6,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
+from pytest_mock import MockerFixture
 
 from app.core.visibility import Visibility
 from app.exceptions import (
@@ -42,6 +43,14 @@ def _user(user_id: object = None, role: str = UserRole.USER) -> User:
     return User(
         id=user_id or uuid4(), auth_provider="clerk", auth_provider_id="x", role=role
     )
+
+
+def _not_blocked(mocker: MockerFixture) -> None:
+    """Patch `is_blocked_between` to report no block, for a mocked
+    session that isn't set up to answer the raw SQL `can_view` now runs
+    to check it (see tests/unit/test_authz.py's own copy of this).
+    """
+    mocker.patch("app.core.authz.is_blocked_between", AsyncMock(return_value=False))
 
 
 def _checkin(**overrides: object) -> Checkin:
@@ -155,7 +164,10 @@ async def test_get_checkin_raises_when_private_and_no_viewer() -> None:
         await checkin_service.get_checkin(session, uuid4(), viewer=None)
 
 
-async def test_get_checkin_raises_when_private_and_viewer_is_not_owner() -> None:
+async def test_get_checkin_raises_when_private_and_viewer_is_not_owner(
+    mocker: MockerFixture,
+) -> None:
+    _not_blocked(mocker)
     session = AsyncMock()
     session.get = AsyncMock(
         return_value=_checkin(visibility=Visibility.PRIVATE, user_id=uuid4())
@@ -208,7 +220,8 @@ async def test_update_checkin_raises_when_not_found() -> None:
         )
 
 
-async def test_update_checkin_raises_when_not_owner() -> None:
+async def test_update_checkin_raises_when_not_owner(mocker: MockerFixture) -> None:
+    _not_blocked(mocker)
     session = AsyncMock()
     session.get = AsyncMock(return_value=_checkin(user_id=uuid4()))
 
@@ -284,7 +297,8 @@ async def test_soft_delete_checkin_raises_when_already_deleted() -> None:
         )
 
 
-async def test_soft_delete_checkin_raises_when_not_owner() -> None:
+async def test_soft_delete_checkin_raises_when_not_owner(mocker: MockerFixture) -> None:
+    _not_blocked(mocker)
     session = AsyncMock()
     session.get = AsyncMock(return_value=_checkin(user_id=uuid4()))
 

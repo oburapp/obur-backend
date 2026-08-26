@@ -14,11 +14,14 @@ from starlette.responses import Response
 
 from app.api.v1 import (
     admin,
+    blocks,
     checkins,
     close_friends,
     follows,
     lists,
+    mutes,
     notifications,
+    reports,
     users,
     venue_categories,
     venue_saves,
@@ -222,9 +225,14 @@ app.include_router(venue_categories.router, prefix=_API_V1_PREFIX)
 app.include_router(checkins.router, prefix=_API_V1_PREFIX)
 app.include_router(follows.router, prefix=_API_V1_PREFIX)
 app.include_router(close_friends.router, prefix=_API_V1_PREFIX)
+app.include_router(blocks.router, prefix=_API_V1_PREFIX)
+app.include_router(mutes.router, prefix=_API_V1_PREFIX)
 app.include_router(lists.router, prefix=_API_V1_PREFIX)
 app.include_router(venue_saves.router, prefix=_API_V1_PREFIX)
 app.include_router(notifications.router, prefix=_API_V1_PREFIX)
+app.include_router(reports.checkin_reports_router, prefix=_API_V1_PREFIX)
+app.include_router(reports.user_reports_router, prefix=_API_V1_PREFIX)
+app.include_router(reports.venue_reports_router, prefix=_API_V1_PREFIX)
 app.include_router(admin.router, prefix=_API_V1_PREFIX)
 app.include_router(webhooks.router, prefix=_API_V1_PREFIX)
 

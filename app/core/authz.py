@@ -13,7 +13,7 @@ same one-line check is reused as-is once other user-owned resources
 import uuid
 
 from fastapi import Depends
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
@@ -55,6 +55,28 @@ async def is_close_friend(
     return result.scalar_one_or_none() is not None
 
 
+async def is_blocked_between(
+    session: AsyncSession, user_a: uuid.UUID, user_b: uuid.UUID
+) -> bool:
+    """Return whether a block exists between the two ids, in either
+    direction.
+
+    Calls `rls_is_blocked_pair` (a `SECURITY DEFINER` function, see
+    ADR-0010 in obur-docs) rather than querying `BLOCK` directly:
+    `blocks_select`'s own RLS policy is blocker-only, so a plain query
+    run as the blocked party's session would never find the one row
+    that matters most to them. This is the Python-side mirror of the
+    same guard `rls_can_view_visibility` already applies at the
+    database layer, kept for symmetry, not because the database layer
+    depends on it.
+    """
+    result = await session.execute(
+        text("SELECT rls_is_blocked_pair(:user_a, :user_b)"),
+        {"user_a": user_a, "user_b": user_b},
+    )
+    return bool(result.scalar_one())
+
+
 async def can_view(
     session: AsyncSession,
     *,
@@ -67,12 +89,17 @@ async def can_view(
     `VENUE_SAVE` (see app.core.visibility.Visibility).
 
     The owner and any admin can always see it, regardless of
-    `visibility`. Otherwise: `public` — anyone; `private` — nobody else;
-    `close_friends` — only someone the owner has added to their close
-    friends (see app.models.close_friend).
+    `visibility`. A block between `owner_id` and `viewer` then overrides
+    every remaining tier, `public` included (PDD §11), before
+    `public`/`private`/`close_friends` are even considered. Otherwise:
+    `public` — anyone; `private` — nobody else; `close_friends` — only
+    someone the owner has added to their close friends (see
+    app.models.close_friend).
     """
     if viewer is not None and is_owner_or_admin(owner_id, viewer):
         return True
+    if viewer is not None and await is_blocked_between(session, owner_id, viewer.id):
+        return False
     if visibility == Visibility.PUBLIC:
         return True
     if visibility == Visibility.PRIVATE:
