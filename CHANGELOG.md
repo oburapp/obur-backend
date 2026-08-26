@@ -90,6 +90,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /admin/venues/{id}/verify`, but check-ins alone never verify it
 - Dependency vulnerability scanning: a `uv audit` job in CI, plus
   Dependabot covering both Python and GitHub Actions dependencies
+- `BLOCK`, `MUTE`, `CONTENT_REPORT`, and `VENUE_REPORT` tables, per
+  ADR-0010 and PDD §11 (Phase 10, schema and RLS only, services and
+  endpoints land in a later PR). `blocks_select` is blocker-only, unlike
+  every other relationship table: the blocked person's own session can
+  never see the row naming them, enforced everywhere through a new
+  `rls_is_blocked_pair` bypass function rather than a plain query.
+  Blocking is enforced in RLS itself on `checkins`, `lists`,
+  `venue_saves`, their likes and `list_items`, `users`, and
+  `notifications`, not only in `can_view` once that gains its own
+  blocking dimension. Both report tables carry an optional `details`
+  free-text field, required only when `reason` is `other` (a correlated
+  `CHECK`); `sexual_content` is renamed to the broader
+  `sensitive_content`
 
 
 ### Changed
@@ -151,6 +164,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   legitimate flow changes; this closes the same gap at the database
   layer that RLS exists to close everywhere else, rather than leaving it
   resting on the ORM's insert path issuing `RETURNING`
+- `close_friends_delete`, `checkin_likes_delete`, `list_likes_delete`,
+  `checkin_bookmarks_delete`, and `list_bookmarks_delete` are now
+  owner-only, not permissive on the row's other party. Found while
+  designing `blocks_delete` for Phase 10: all five were written that way
+  on the mistaken belief that account-deletion cascades needed it, which
+  they don't, PostgreSQL's referential integrity checks always bypass
+  row security. None of the five had a real endpoint behind the wider
+  form (verified against every caller in `app/services/`,
+  `app/api/v1/`), so this closes an unused gap rather than changing any
+  actual behavior
 
 ## [0.6.0] - 2026-08-24
 

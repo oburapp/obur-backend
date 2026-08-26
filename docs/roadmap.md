@@ -543,10 +543,18 @@ Schema from [ADR-0010](https://github.com/oburapp/obur-docs/blob/main/adr/0010-b
 behaviour from PDD §11.
 
 - `BLOCK`, `MUTE`, `CONTENT_REPORT`, `VENUE_REPORT`.
-- **`can_view` gains a blocking dimension**, overriding all three visibility
-  tiers including `public`. Every listing query from Phases 3–4 gains the
-  filter, reusing the `close_friend_of_owner_exists` correlated-subquery
-  pattern so it stays one query.
+- **`BLOCK`'s own RLS is blocker-only** (`blocks_select` never lets the
+  blocked person's session read the row), so every enforcement call site,
+  RLS policy or application code, goes through one `SECURITY DEFINER`
+  bypass function (`rls_is_blocked_pair`) rather than a plain correlated
+  subquery, since `close_friends`' pattern doesn't extend here (see
+  ADR-0010).
+- **Blocking is enforced in RLS itself, not only `can_view`**: a guard
+  folded into `rls_can_view_visibility` (covers checkins, lists,
+  venue_saves, and their likes/list_items transitively), plus `users_select`
+  and `notifications`' select/insert policies. `can_view` and its callers
+  gain the same check at the application layer for symmetry, but the
+  database layer no longer depends on every query remembering to call it.
 - Blocking semantics per PDD §11: bidirectional auto-unfollow, mutual
   disappearance, silent, retroactive purge of likes/bookmarks/notifications,
   per-viewer anonymisation. Unblocking restores nothing.
