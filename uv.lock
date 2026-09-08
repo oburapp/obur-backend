@@ -713,7 +713,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "redis", specifier = ">=8.1.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
-    { name = "svix", specifier = ">=2.0.0" },
+    { name = "svix", specifier = ">=2.3.0" },
     { name = "tzdata", specifier = ">=2026.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.4" },
 ]
@@ -1130,7 +1130,7 @@ wheels = [
 
 [[package]]
 name = "svix"
-version = "2.0.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -1140,9 +1140,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "standardwebhooks" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/c6/39de40d8d808dc5945d81f8cda7c50e7208fbb50b21e51f0d4693ec0dfdb/svix-2.0.0.tar.gz", hash = "sha256:cbf11db12f8fad0b3cd2770ea441d96efc4e679d98c6c1d02a9943984f40d54b", size = 53842, upload-time = "2026-08-19T11:01:04.708Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/78/fa1367559b1711a3283da4bdf48c2493be1df2de2976469fce643af9f8ab/svix-2.3.0.tar.gz", hash = "sha256:0c13d3397f83759bdcd0aeca8534da6529330c5fe2c6ceb806c4098712ed86da", size = 55103, upload-time = "2026-09-03T07:40:44.807Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/7d/32e210883c2c9b590fa98a19fd452ef502b252ff3658308f4d297ee1ab2d/svix-2.0.0-py3-none-any.whl", hash = "sha256:d926f4e23654ad2efae2b388df81b213dcb34d3213134d5ec8a254e5177cfdcf", size = 148644, upload-time = "2026-08-19T11:01:03.073Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/aa/8b152ec4f61882e09f44dc4a4909f92a56b86b8a6da2f49a2f22737cfc20/svix-2.3.0-py3-none-any.whl", hash = "sha256:9555de4899c3bf6c27f2be5b8c1dd7a352e445713f4d619fad0f833955b1aa6b", size = 151613, upload-time = "2026-09-03T07:40:43.182Z" },
 ]
 
 [[package]]
