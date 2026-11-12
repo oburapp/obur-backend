@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.block import Block
 from app.models.checkin import Checkin
 from app.models.checkin_bookmark import CheckinBookmark
+from app.models.checkin_draft import CheckinDraft
 from app.models.checkin_like import CheckinLike
 from app.models.close_friend import CloseFriend
 from app.models.content_report import (
@@ -33,6 +34,7 @@ __all__ = [
     "Block",
     "Checkin",
     "CheckinBookmark",
+    "CheckinDraft",
     "CheckinLike",
     "CloseFriend",
     "ContentReport",

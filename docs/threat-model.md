@@ -38,7 +38,7 @@ actually access *that specific* object. The classic IDOR case, and the
 single most common real-world API vulnerability class.
 
 **Relevance:** Very high. Nearly every endpoint is object-ID-keyed
-(checkins, lists, venue saves, notifications, users).
+(checkins, check-in drafts, lists, venue saves, notifications, users).
 
 **Current state:** Two independent layers, not one:
 
@@ -47,11 +47,14 @@ single most common real-world API vulnerability class.
   Existence-leak protection is built in: a resource a caller can't see
   returns the same 404 a nonexistent id would, never a 403 that would
   confirm the id belongs to something real.
-- **Database layer** - Row Level Security on all 15 application tables
+- **Database layer** - Row Level Security on all 20 application tables
   (ADR-0016, Phase 8), the layer that survives a query forgetting to
   call the application check. Verified with fail-closed and
   application/RLS-parity integration tests
   (`tests/integration/test_rls_policies_integration.py`).
+  `checkin_drafts` is the one owned table with no admin exception:
+  a draft is unpublished content no workflow needs an admin to see
+  (ADR-0018).
 
 **Risk: Low.** The best-covered category in the codebase, and the one
 this whole Phase 8 effort was built around.

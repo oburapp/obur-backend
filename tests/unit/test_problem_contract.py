@@ -15,6 +15,7 @@ from pytest_mock import MockerFixture
 
 from app.core import problems
 from app.core.auth import get_current_user
+from app.core.idempotency import IDEMPOTENCY_KEY_HEADER
 from app.core.problems import Problem, ProblemError
 from app.exceptions import VenueNotFoundError
 from app.main import app
@@ -80,7 +81,13 @@ async def test_a_validation_failure_uses_the_problem_shape(
     client: AsyncClient, _authenticated: None
 ) -> None:
     """FastAPI's native `{"detail": [...]}` is normalised into the same body."""
-    response = await _problem(client, "POST", "/api/v1/checkins", json={})
+    response = await _problem(
+        client,
+        "POST",
+        "/api/v1/checkins",
+        headers={IDEMPOTENCY_KEY_HEADER: str(uuid4())},
+        json={},
+    )
 
     assert response.json()["type"] == problems.VALIDATION_FAILED.type
 
@@ -88,7 +95,13 @@ async def test_a_validation_failure_uses_the_problem_shape(
 async def test_a_validation_failure_reports_which_fields_failed(
     client: AsyncClient, _authenticated: None
 ) -> None:
-    response = await _problem(client, "POST", "/api/v1/checkins", json={})
+    response = await _problem(
+        client,
+        "POST",
+        "/api/v1/checkins",
+        headers={IDEMPOTENCY_KEY_HEADER: str(uuid4())},
+        json={},
+    )
 
     assert response.json()["errors"]
 

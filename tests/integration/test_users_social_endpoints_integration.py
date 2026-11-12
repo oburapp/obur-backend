@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import set_current_user_identity
+from app.core.idempotency import IDEMPOTENCY_KEY_HEADER
 from app.main import app
 from app.models.user import User
 from app.models.venue import Venue
@@ -146,6 +147,7 @@ async def test_list_my_bookmarked_checkins_over_http(
     try:
         create_response = await client_with_db_session.post(
             "/api/v1/checkins",
+            headers={IDEMPOTENCY_KEY_HEADER: str(uuid4())},
             json={
                 "venue_id": str(venue.id),
                 "rating_taste": 4,
@@ -195,6 +197,7 @@ async def test_listing_my_bookmarked_checkins_does_not_scale_query_count(
         )
         create_response = await client_with_db_session.post(
             "/api/v1/checkins",
+            headers={IDEMPOTENCY_KEY_HEADER: str(uuid4())},
             json={
                 "venue_id": str(venue.id),
                 "rating_taste": 4,

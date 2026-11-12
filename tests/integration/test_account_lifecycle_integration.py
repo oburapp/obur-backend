@@ -21,6 +21,7 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
 from app.services import checkin as checkin_service
+from app.services import checkin_listing as checkin_listing_service
 from app.services import follow as follow_service
 from app.services import list as list_service
 from app.services import user as user_service
@@ -63,6 +64,7 @@ async def _create_checkin(session: AsyncSession, owner: User, venue: Venue) -> C
     return await checkin_service.create_checkin(
         session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -128,14 +130,14 @@ async def test_a_frozen_users_checkins_drop_out_of_a_venue_listing(
     await set_current_user_identity(db_session, owner.id)
     await _create_checkin(db_session, owner, venue)
 
-    before = await checkin_service.list_checkins_for_venue(
+    before = await checkin_listing_service.list_checkins_for_venue(
         db_session, venue.id, viewer=viewer, limit=20, offset=0
     )
     assert len(before) == 1
 
     await user_service.freeze_account(db_session, user=owner)
 
-    after = await checkin_service.list_checkins_for_venue(
+    after = await checkin_listing_service.list_checkins_for_venue(
         db_session, venue.id, viewer=viewer, limit=20, offset=0
     )
     assert after == []

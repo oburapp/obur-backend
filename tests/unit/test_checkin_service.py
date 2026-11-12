@@ -19,6 +19,7 @@ from app.models.checkin import Checkin
 from app.models.user import User, UserRole
 from app.models.venue import Venue
 from app.services import checkin as checkin_service
+from app.services import checkin_listing as checkin_listing_service
 
 _TZ = "Europe/Istanbul"
 
@@ -69,9 +70,16 @@ def _checkin(**overrides: object) -> Checkin:
 
 
 def _session_for_create(*, venue: Venue | None) -> AsyncMock:
+    """A session for a first-time submission: the idempotency lock is
+    free and no earlier check-in carries the key.
+    """
     session = AsyncMock()
     session.add = MagicMock()
     session.get = AsyncMock(return_value=venue)
+    session.scalar = AsyncMock(return_value=True)
+    no_previous = MagicMock()
+    no_previous.scalar_one_or_none.return_value = None
+    session.execute = AsyncMock(return_value=no_previous)
     return session
 
 
@@ -82,6 +90,7 @@ async def test_create_checkin_raises_when_venue_not_found() -> None:
         await checkin_service.create_checkin(
             session,
             user_id=uuid4(),
+            idempotency_key=uuid4(),
             venue_id=uuid4(),
             visited_at=date.today(),
             visited_tz=_TZ,
@@ -102,6 +111,7 @@ async def test_create_checkin_raises_on_future_visit_date() -> None:
         await checkin_service.create_checkin(
             session,
             user_id=uuid4(),
+            idempotency_key=uuid4(),
             venue_id=uuid4(),
             visited_at=tomorrow,
             visited_tz=_TZ,
@@ -118,6 +128,7 @@ async def test_create_checkin_persists_all_four_criteria() -> None:
     checkin = await checkin_service.create_checkin(
         session,
         user_id=uuid4(),
+        idempotency_key=uuid4(),
         venue_id=uuid4(),
         visited_at=date.today(),
         visited_tz=_TZ,
@@ -357,7 +368,7 @@ async def test_list_checkins_for_venue_returns_results() -> None:
     result_mock.scalars.return_value.all.return_value = checkins
     session.execute.return_value = result_mock
 
-    result = await checkin_service.list_checkins_for_venue(
+    result = await checkin_listing_service.list_checkins_for_venue(
         session, uuid4(), viewer=None, limit=20, offset=0
     )
 
@@ -371,7 +382,7 @@ async def test_list_checkins_for_user_returns_results() -> None:
     result_mock.scalars.return_value.all.return_value = checkins
     session.execute.return_value = result_mock
 
-    result = await checkin_service.list_checkins_for_user(
+    result = await checkin_listing_service.list_checkins_for_user(
         session, uuid4(), viewer=None, limit=20, offset=0
     )
 

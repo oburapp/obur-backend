@@ -33,6 +33,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -53,6 +54,9 @@ _RATING_COLUMNS = (
 )
 
 _DEFAULT_VISIBILITY = Visibility.PUBLIC
+
+# Hex-encoded SHA-256 digest length.
+IDEMPOTENCY_PAYLOAD_HASH_LENGTH = 64
 _ALLOWED_VISIBILITIES = (
     Visibility.PUBLIC,
     Visibility.CLOSE_FRIENDS,
@@ -77,6 +81,14 @@ class Checkin(Base):
             + ", ".join(f"'{value}'" for value in _ALLOWED_VISIBILITIES)
             + ")",
             name="ck_checkins_visibility_allowed",
+        ),
+        # A retried submission with the same key resolves to this row
+        # instead of creating a second one. Per user, not global: two
+        # users can never collide, and the key is client-generated.
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_checkins_user_id_idempotency_key",
         ),
     )
 
@@ -118,6 +130,18 @@ class Checkin(Base):
     # in app.services.checkin instead.
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Client-generated, sent as the Idempotency-Key header (ADR-0018 in
+    # obur-docs). NOT NULL: every check-in has one, so no code path can
+    # create a check-in that skips the duplicate guard.
+    idempotency_key: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    # SHA-256 of the submitted content, so a key reused with different
+    # content is rejected instead of silently returning this row. See
+    # app.services.checkin_idempotency for exactly which fields it covers.
+    idempotency_payload_hash: Mapped[str] = mapped_column(
+        String(IDEMPOTENCY_PAYLOAD_HASH_LENGTH), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

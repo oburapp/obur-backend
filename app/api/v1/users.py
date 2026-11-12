@@ -15,7 +15,7 @@ from app.schemas.list import ListResponse
 from app.schemas.user import UserResponse, UserUpdateRequest
 from app.schemas.venue_save import VenueSaveResponse
 from app.services import bookmark as bookmark_service
-from app.services import checkin as checkin_service
+from app.services import checkin_listing as checkin_listing_service
 from app.services import list as list_service
 from app.services import user as user_service
 from app.services import venue_save as venue_save_service
@@ -89,7 +89,7 @@ async def list_user_checkins(
     """List a user's check-ins, newest first. Private check-ins are
     only included when the viewer is that same user or an admin.
     """
-    checkins = await checkin_service.list_checkins_for_user(
+    checkins = await checkin_listing_service.list_checkins_for_user(
         session, user_id, viewer=viewer, limit=limit, offset=offset
     )
     return [CheckinResponse.model_validate(checkin) for checkin in checkins]

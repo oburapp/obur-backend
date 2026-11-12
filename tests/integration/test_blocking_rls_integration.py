@@ -77,6 +77,7 @@ async def _create_public_checkin(
     return await checkin_service.create_checkin(
         session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,

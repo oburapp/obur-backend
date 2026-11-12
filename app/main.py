@@ -15,6 +15,7 @@ from starlette.responses import Response
 from app.api.v1 import (
     admin,
     blocks,
+    checkin_drafts,
     checkins,
     close_friends,
     follows,
@@ -223,6 +224,7 @@ app.include_router(users.router, prefix=_API_V1_PREFIX)
 app.include_router(venues.router, prefix=_API_V1_PREFIX)
 app.include_router(venue_categories.router, prefix=_API_V1_PREFIX)
 app.include_router(checkins.router, prefix=_API_V1_PREFIX)
+app.include_router(checkin_drafts.router, prefix=_API_V1_PREFIX)
 app.include_router(follows.router, prefix=_API_V1_PREFIX)
 app.include_router(close_friends.router, prefix=_API_V1_PREFIX)
 app.include_router(blocks.router, prefix=_API_V1_PREFIX)

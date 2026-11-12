@@ -6,9 +6,14 @@ from app.exceptions.auth_exceptions import (
     InvalidWebhookSignatureError,
 )
 from app.exceptions.checkin_exceptions import (
+    CheckinDraftNotFoundError,
     CheckinError,
     CheckinNotFoundError,
     FutureVisitDateError,
+    IdempotencyKeyInvalidError,
+    IdempotencyKeyMissingError,
+    IdempotencyKeyReusedError,
+    IdempotencyRequestInProgressError,
     NotCheckinOwnerError,
 )
 from app.exceptions.report_exceptions import (
@@ -56,6 +61,7 @@ __all__ = [
     "AuthError",
     "BlockNotFoundError",
     "BookmarkNotFoundError",
+    "CheckinDraftNotFoundError",
     "CheckinError",
     "CheckinNotFoundError",
     "CloseFriendNotFoundError",
@@ -64,6 +70,10 @@ __all__ = [
     "DuplicateVenueNearbyError",
     "FollowNotFoundError",
     "FutureVisitDateError",
+    "IdempotencyKeyInvalidError",
+    "IdempotencyKeyMissingError",
+    "IdempotencyKeyReusedError",
+    "IdempotencyRequestInProgressError",
     "InvalidTokenError",
     "InvalidWebhookSignatureError",
     "LikeNotFoundError",

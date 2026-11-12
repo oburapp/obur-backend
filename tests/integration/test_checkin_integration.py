@@ -24,6 +24,7 @@ from app.models.user import User, UserRole
 from app.models.venue import Venue
 from app.seeds.identity import venue_category_id
 from app.services import checkin as checkin_service
+from app.services import checkin_listing as checkin_listing_service
 from app.services import close_friend as close_friend_service
 from app.services import follow as follow_service
 
@@ -72,6 +73,7 @@ async def test_create_checkin_persists_and_is_retrievable(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=user.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -99,6 +101,7 @@ async def test_create_checkin_raises_when_venue_does_not_exist(
         await checkin_service.create_checkin(
             db_session,
             user_id=user.id,
+            idempotency_key=uuid4(),
             venue_id=uuid4(),
             rating_taste=4,
             rating_service=3,
@@ -119,6 +122,7 @@ async def test_create_checkin_raises_on_future_visit_date(
         await checkin_service.create_checkin(
             db_session,
             user_id=user.id,
+            idempotency_key=uuid4(),
             venue_id=venue.id,
             rating_taste=4,
             rating_service=3,
@@ -139,6 +143,7 @@ async def test_get_checkin_hides_private_checkin_from_other_users(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -168,6 +173,7 @@ async def test_get_checkin_reveals_private_checkin_to_admin(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -202,6 +208,7 @@ async def test_get_checkin_reveals_close_friends_checkin_only_to_close_friends(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -233,6 +240,7 @@ async def test_list_checkins_for_venue_filters_private_checkins(
     await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -245,6 +253,7 @@ async def test_list_checkins_for_venue_filters_private_checkins(
     private_checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -256,14 +265,14 @@ async def test_list_checkins_for_venue_filters_private_checkins(
     )
 
     await set_current_user_identity(db_session, other_user.id)
-    as_stranger = await checkin_service.list_checkins_for_venue(
+    as_stranger = await checkin_listing_service.list_checkins_for_venue(
         db_session, venue.id, viewer=other_user, limit=20, offset=0
     )
     assert all(c.id != private_checkin.id for c in as_stranger)
     assert len(as_stranger) == 1
 
     await set_current_user_identity(db_session, owner.id)
-    as_owner = await checkin_service.list_checkins_for_venue(
+    as_owner = await checkin_listing_service.list_checkins_for_venue(
         db_session, venue.id, viewer=owner, limit=20, offset=0
     )
     assert any(c.id == private_checkin.id for c in as_owner)
@@ -280,6 +289,7 @@ async def test_list_checkins_for_user_filters_private_checkins(
     await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -291,11 +301,11 @@ async def test_list_checkins_for_user_filters_private_checkins(
     )
 
     await set_current_user_identity(db_session, other_user.id)
-    as_stranger = await checkin_service.list_checkins_for_user(
+    as_stranger = await checkin_listing_service.list_checkins_for_user(
         db_session, owner.id, viewer=other_user, limit=20, offset=0
     )
     await set_current_user_identity(db_session, owner.id)
-    as_owner = await checkin_service.list_checkins_for_user(
+    as_owner = await checkin_listing_service.list_checkins_for_user(
         db_session, owner.id, viewer=owner, limit=20, offset=0
     )
 
@@ -312,6 +322,7 @@ async def test_update_checkin_persists_changes_for_the_owner(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -336,6 +347,7 @@ async def test_update_checkin_raises_for_non_owner(db_session: AsyncSession) -> 
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -370,6 +382,7 @@ async def test_update_checkin_by_non_owner_on_a_private_checkin_returns_not_foun
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -396,6 +409,7 @@ async def test_soft_delete_excludes_checkin_from_listings_and_lookup(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -412,7 +426,7 @@ async def test_soft_delete_excludes_checkin_from_listings_and_lookup(
     with pytest.raises(CheckinNotFoundError):
         await checkin_service.get_checkin(db_session, checkin.id, viewer=owner)
 
-    listing = await checkin_service.list_checkins_for_venue(
+    listing = await checkin_listing_service.list_checkins_for_venue(
         db_session, venue.id, viewer=owner, limit=20, offset=0
     )
     assert listing == []
@@ -431,6 +445,7 @@ async def test_hard_delete_removes_the_row_entirely(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,
@@ -458,6 +473,7 @@ async def test_hard_delete_can_purge_an_already_soft_deleted_checkin(
     checkin = await checkin_service.create_checkin(
         db_session,
         user_id=owner.id,
+        idempotency_key=uuid4(),
         venue_id=venue.id,
         rating_taste=4,
         rating_service=3,

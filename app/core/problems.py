@@ -16,92 +16,13 @@ copy is the client's, produced by mapping `type` to its own wording in the
 reader's own language.
 """
 
-from typing import Any
-
 from fastapi import status
-from fastapi.responses import JSONResponse
 
-CONTENT_TYPE = "application/problem+json"
+# Re-exported so `from app.core.problems import Problem, ProblemError`
+# keeps working; the classes themselves live in app.core.problem_details.
+from app.core.problem_details import CONTENT_TYPE, Problem, ProblemError
 
-_URN_PREFIX = "urn:obur:problem:"
-
-
-class Problem:
-    """A problem type: its URN, its human-readable title, and its status.
-
-    Instances are module-level constants below, so a type is declared once
-    and referenced everywhere rather than spelled out at each raise site.
-    """
-
-    def __init__(
-        self, slug: str, title: str, status_code: int, detail: str = ""
-    ) -> None:
-        self.type = f"{_URN_PREFIX}{slug}"
-        self.title = title
-        self.status = status_code
-        # The sentence shown when nothing more specific is known. Written
-        # once here rather than repeated at every raise site, which is what
-        # kept exception text leaking into responses before.
-        self.detail = detail or title
-
-    def response(
-        self,
-        *,
-        detail: str,
-        request_id: str | None = None,
-        headers: dict[str, str] | None = None,
-        **extensions: Any,
-    ) -> JSONResponse:
-        """Render this problem as a response body.
-
-        Extension members are permitted by the RFC and clients are required
-        to ignore ones they don't recognise, so adding a field here is
-        always backward compatible.
-        """
-        body: dict[str, Any] = {
-            "type": self.type,
-            "title": self.title,
-            "status": self.status,
-            "detail": detail,
-        }
-        if request_id is not None:
-            body["request_id"] = request_id
-        body.update(extensions)
-
-        return JSONResponse(
-            status_code=self.status,
-            content=body,
-            media_type=CONTENT_TYPE,
-            headers=headers,
-        )
-
-
-class ProblemError(Exception):
-    """Raised by a route to return a problem response.
-
-    Carries the problem type and, where one occurrence differs from the
-    next, its own detail. Omitting `detail` uses the problem's own written
-    text — which is the common case, so requiring it would make every raise
-    site repeat the constant it just named.
-
-    The handler in app/main.py turns this into a response and attaches the
-    request id, so no route needs to know how correlation works.
-    """
-
-    def __init__(
-        self,
-        problem: Problem,
-        detail: str | None = None,
-        *,
-        headers: dict[str, str] | None = None,
-        **extensions: Any,
-    ) -> None:
-        self.problem = problem
-        self.detail = detail if detail is not None else problem.detail
-        self.headers = headers
-        self.extensions = extensions
-        super().__init__(f"{problem.type}: {self.detail}")
-
+__all__ = ["CONTENT_TYPE", "Problem", "ProblemError"]
 
 # --- Not found -------------------------------------------------------------
 # A resource hidden from the caller returns the same problem a nonexistent
@@ -111,6 +32,12 @@ CHECKIN_NOT_FOUND = Problem(
     "Checkin not found",
     status.HTTP_404_NOT_FOUND,
     "No check-in with that id is visible to you.",
+)
+CHECKIN_DRAFT_NOT_FOUND = Problem(
+    "checkin-draft-not-found",
+    "Check-in draft not found",
+    status.HTTP_404_NOT_FOUND,
+    "No unexpired draft with that id belongs to you.",
 )
 LIST_NOT_FOUND = Problem(
     "list-not-found",
@@ -225,8 +152,36 @@ DUPLICATE_LIST_ITEM = Problem(
     status.HTTP_409_CONFLICT,
     "That venue is already in this list.",
 )
+# Status codes for the idempotency problems follow the IETF
+# Idempotency-Key header draft (draft-ietf-httpapi-idempotency-key-header),
+# see ADR-0018 in obur-docs.
+IDEMPOTENCY_REQUEST_IN_PROGRESS = Problem(
+    "idempotency-request-in-progress",
+    "A request with this idempotency key is still being processed",
+    status.HTTP_409_CONFLICT,
+    "Retry once the earlier request with this key has finished.",
+)
 
 # --- Rejected input --------------------------------------------------------
+IDEMPOTENCY_KEY_MISSING = Problem(
+    "idempotency-key-missing",
+    "Idempotency-Key header is required",
+    status.HTTP_400_BAD_REQUEST,
+    "Send a client-generated UUID in the Idempotency-Key header.",
+)
+IDEMPOTENCY_KEY_INVALID = Problem(
+    "idempotency-key-invalid",
+    "Idempotency-Key header is not a UUID",
+    status.HTTP_400_BAD_REQUEST,
+    "The Idempotency-Key header must be a UUID.",
+)
+IDEMPOTENCY_KEY_REUSED = Problem(
+    "idempotency-key-reused",
+    "Idempotency key was already used with different content",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "This idempotency key belongs to a different submission. Generate a new "
+    "key for a new submission.",
+)
 VALIDATION_FAILED = Problem(
     "validation-failed",
     "Request validation failed",

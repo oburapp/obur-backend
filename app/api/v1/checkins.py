@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
+from app.core.idempotency import get_idempotency_key
 from app.models.user import User
 from app.schemas.checkin import (
     CheckinCreateRequest,
@@ -25,13 +26,26 @@ router = APIRouter(prefix="/checkins", tags=["checkins"])
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_checkin(
     payload: CheckinCreateRequest,
+    # Declared after `current_user` on purpose: dependencies resolve in
+    # order, and an unauthenticated caller should get 401, not a 400
+    # about a header they had no business sending yet.
     current_user: User = Depends(get_current_user),
+    idempotency_key: UUID = Depends(get_idempotency_key),
     session: AsyncSession = Depends(get_session),
 ) -> CheckinResponse:
-    """Create a check-in: one visit and its venue-level ratings."""
+    """Create a check-in: one visit and its venue-level ratings.
+
+    Idempotent per the `Idempotency-Key` header: a retry with the same key
+    and content returns the original check-in with the same 201, so a
+    client never needs to tell a first response from a replayed one
+    (ADR-0018 in obur-docs). If `draft_id` is given, that draft is
+    deleted along with the creation.
+    """
     checkin = await checkin_service.create_checkin(
         session,
         user_id=current_user.id,
+        idempotency_key=idempotency_key,
+        draft_id=payload.draft_id,
         venue_id=payload.venue_id,
         visited_at=payload.visited_at,
         visited_tz=payload.visited_tz,

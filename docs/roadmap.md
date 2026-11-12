@@ -579,7 +579,9 @@ Also P0 for store review (Apple §1.2, Google Play UGC).
 ## Phase 11 — Check-in Reliability: Drafts & Idempotency
 
 Both tables are specified in PDD §7, including why a draft is its own table
-rather than a `CHECKIN.is_draft` flag.
+rather than a `CHECKIN.is_draft` flag. Expiry, cross-device conflicts, the
+submission contract, and the idempotency status codes are decided in
+[ADR-0018](https://github.com/oburapp/obur-docs/blob/main/adr/0018-checkin-drafts-and-idempotency.md).
 
 - `CHECKIN_DRAFT` plus CRUD, server-synced so a draft started on mobile
   resumes on web; promoted to a real `CHECKIN` on submit, then deleted.
