@@ -207,15 +207,22 @@ except:
 - Follow RESTful principles
 - All endpoints live under `/api/v1/`
 - Every endpoint must have explicit request and response Pydantic schemas
-- Use correct HTTP status codes:
-  - `200` — success
-  - `201` — created
-  - `400` — client error
-  - `401` — unauthorized
-  - `403` — forbidden
-  - `404` — not found
-  - `422` — validation error
-  - `500` — server error
+- Status codes follow the published standard for the situation, never a
+  local preference: RFC 9110 for HTTP semantics, plus any specification
+  governing the specific mechanism (for example the IETF Idempotency-Key
+  header draft, see ADR-0018 in obur-docs). Cite the source where the
+  choice is not obvious. The common cases:
+  - `200`: success
+  - `201`: created
+  - `204`: success, no body
+  - `400`: malformed request (e.g. a required header missing)
+  - `401`: unauthenticated
+  - `403`: authenticated but not allowed
+  - `404`: not found, or hidden from the caller (never confirm existence)
+  - `409`: conflicts with the current state of the resource
+  - `422`: well-formed but semantically invalid
+  - `429`: rate limited
+  - `500`: server error
 - All list endpoints must support pagination (limit/offset or cursor-based) — never return unbounded results
 - Enable `GZipMiddleware` for response compression
 - Use FastAPI `Depends()` for dependency injection — never instantiate services manually as globals

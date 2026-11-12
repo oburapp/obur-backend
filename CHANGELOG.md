@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Check-in drafts (`/api/v1/checkin-drafts`), per ADR-0018: server-synced
+  so a check-in started on one device can be finished on another. Any
+  number per user, each expiring 7 days after its last edit; expiry is
+  applied at read time and expired rows are cleaned up lazily, so no
+  scheduled job is needed. Last write wins across devices. `visibility`
+  and `visited_tz` live on the draft so a choice made on the phone
+  survives to the web. Owner-only RLS with no admin exception
+- Idempotent check-in submission: `POST /api/v1/checkins` requires an
+  `Idempotency-Key` header (UUID), following the IETF Idempotency-Key
+  draft. A retry returns the original check-in with the same 201; the
+  same key with different content is rejected (422); a concurrent
+  duplicate gets 409; a retry after the check-in was deleted gets 404
+  instead of recreating it. An optional `draft_id` deletes the draft in
+  the same transaction. Existing check-ins were backfilled so the key
+  is `NOT NULL`
+- CI runs `alembic check` after the test suite, so a model that drifts
+  from its migrations fails the build instead of going unnoticed
+
 - Rate limiting on every endpoint, per ADR-0014. Two tiers: a generous
   baseline for reads, and a strict one on the writes whose abuse damages
   data rather than costing bandwidth (check-in, venue, follow).
@@ -170,6 +188,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An unknown `visited_tz` (e.g. `Mars/Olympus`) returned an unhandled 500
+  from `POST /api/v1/checkins`; it is now rejected as a 422 at the schema,
+  and drafts get the same check
+- `Venue` now declares the partial unique index on `google_places_id`
+  that migration f7514fe63beb created. Autogenerate had been proposing
+  to drop it on every new migration, which would have removed ADR-0009's
+  duplicate guard if accepted unread
 - The strict rate-limit tier never applied. The tier was read from
   `scope["route"]`, which Starlette does not populate until the router
   runs — after all middleware. Check-in, venue, and follow creation were

@@ -8,6 +8,7 @@ from httpx import AsyncClient, Response
 from pytest_mock import MockerFixture
 
 from app.core.auth import get_current_user, get_optional_current_user
+from app.core.idempotency import IDEMPOTENCY_KEY_HEADER
 from app.core.visibility import Visibility
 from app.exceptions import (
     BookmarkNotFoundError,
@@ -64,7 +65,11 @@ def _create_payload(**overrides: object) -> dict[str, object]:
 async def _post_checkin(client: AsyncClient, **overrides: object) -> Response:
     app.dependency_overrides[get_current_user] = lambda: _USER
     try:
-        return await client.post("/api/v1/checkins", json=_create_payload(**overrides))
+        return await client.post(
+            "/api/v1/checkins",
+            headers={IDEMPOTENCY_KEY_HEADER: str(uuid4())},
+            json=_create_payload(**overrides),
+        )
     finally:
         app.dependency_overrides.clear()
 

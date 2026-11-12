@@ -13,7 +13,7 @@ from app.models.user import User
 from app.models.venue import Venue
 from app.schemas.checkin import CheckinResponse
 from app.schemas.venue import VenueCreateRequest, VenueResponse
-from app.services import checkin as checkin_service
+from app.services import checkin_listing as checkin_listing_service
 from app.services import venue as venue_service
 from app.services import venue_category as venue_category_service
 
@@ -111,7 +111,7 @@ async def list_venue_checkins(
     """List a venue's check-ins, newest first. Private check-ins only
     appear for their own owner or an admin.
     """
-    checkins = await checkin_service.list_checkins_for_venue(
+    checkins = await checkin_listing_service.list_checkins_for_venue(
         session, venue_id, viewer=viewer, limit=limit, offset=offset
     )
     return [CheckinResponse.model_validate(checkin) for checkin in checkins]

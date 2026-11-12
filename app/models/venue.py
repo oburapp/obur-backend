@@ -27,9 +27,11 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,6 +44,19 @@ class Venue(Base):
     """A place — restaurant, cafe, bar, etc."""
 
     __tablename__ = "venues"
+    __table_args__ = (
+        # One venue per Google place, the anchor of ADR-0009's exact-match
+        # duplicate resolution. Partial, so the many venues with no
+        # google_places_id don't collide on NULL. Created by migration
+        # f7514fe63beb; declared here so autogenerate stops proposing to
+        # drop it as stale.
+        Index(
+            "uq_venues_google_places_id",
+            "google_places_id",
+            unique=True,
+            postgresql_where=text("google_places_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

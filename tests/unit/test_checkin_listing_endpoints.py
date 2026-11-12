@@ -38,7 +38,7 @@ async def test_list_venue_checkins_returns_checkins(
 ) -> None:
     checkins = [_checkin(), _checkin()]
     mocker.patch(
-        "app.api.v1.venues.checkin_service.list_checkins_for_venue",
+        "app.api.v1.venues.checkin_listing_service.list_checkins_for_venue",
         AsyncMock(return_value=checkins),
     )
     response = await client.get(f"/api/v1/venues/{uuid4()}/checkins")
@@ -52,7 +52,7 @@ async def test_list_user_checkins_returns_checkins(
 ) -> None:
     checkins = [_checkin()]
     mocker.patch(
-        "app.api.v1.users.checkin_service.list_checkins_for_user",
+        "app.api.v1.users.checkin_listing_service.list_checkins_for_user",
         AsyncMock(return_value=checkins),
     )
     response = await client.get(f"/api/v1/users/{uuid4()}/checkins")

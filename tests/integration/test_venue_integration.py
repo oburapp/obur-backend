@@ -280,6 +280,7 @@ async def _checkin_at(
     await checkin_service.create_checkin(
         db_session,
         user_id=user_id,
+        idempotency_key=uuid4(),
         venue_id=venue_id,
         rating_taste=4,
         rating_service=4,

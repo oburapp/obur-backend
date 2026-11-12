@@ -1,20 +1,17 @@
-"""Checkin domain: creation, privacy-aware lookup/listing, and
-soft/hard delete.
+"""Checkin domain: idempotent creation, privacy-aware lookup, editing,
+and soft/hard delete. Listing lives in app.services.checkin_listing.
 """
 
 import uuid
 from datetime import UTC, date, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import (
-    account_is_visible,
     can_view,
-    close_friend_of_owner_exists,
     ensure_visible_and_owned,
-    is_owner_or_admin,
 )
 from app.core.visibility import Visibility
 from app.exceptions import (
@@ -24,8 +21,14 @@ from app.exceptions import (
     VenueNotFoundError,
 )
 from app.models.checkin import Checkin
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.venue import Venue
+from app.services.checkin_draft import discard_submitted_draft
+from app.services.checkin_idempotency import (
+    acquire_submission_lock,
+    find_previous_submission,
+    payload_hash,
+)
 from app.services.venue import evaluate_venue_verification
 
 # Fields a check-in's owner (or an admin) may change after creation —
@@ -63,6 +66,7 @@ async def create_checkin(
     session: AsyncSession,
     *,
     user_id: uuid.UUID,
+    idempotency_key: uuid.UUID,
     venue_id: uuid.UUID,
     visited_at: date,
     visited_tz: str,
@@ -73,39 +77,83 @@ async def create_checkin(
     note: str | None = None,
     photo_url: str | None = None,
     visibility: str = Visibility.PUBLIC,
+    draft_id: uuid.UUID | None = None,
 ) -> Checkin:
-    """Create a check-in.
+    """Create a check-in, or return the one an earlier request with the
+    same `idempotency_key` already created (ADR-0018 in obur-docs). If
+    `draft_id` is given, that draft is deleted in the same transaction.
 
+    Raises `IdempotencyRequestInProgressError`, `IdempotencyKeyReusedError`,
+    or `CheckinNotFoundError` per app.services.checkin_idempotency.
     Raises `VenueNotFoundError` if `venue_id` doesn't exist.
     Raises `FutureVisitDateError` if `visited_at` is in the future for
     the visitor.
     """
+    fields = {
+        "venue_id": venue_id,
+        "rating_taste": rating_taste,
+        "rating_service": rating_service,
+        "rating_ambiance": rating_ambiance,
+        "rating_value": rating_value,
+        "note": note,
+        "photo_url": photo_url,
+        "visibility": visibility,
+        "visited_at": visited_at,
+        "visited_tz": visited_tz,
+    }
+    content_hash = payload_hash(fields)
+    await acquire_submission_lock(
+        session, user_id=user_id, idempotency_key=idempotency_key
+    )
+    previous = await find_previous_submission(
+        session,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        content_hash=content_hash,
+    )
+    if previous is not None:
+        return previous
+
+    return await _insert_checkin(
+        session,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        content_hash=content_hash,
+        fields=fields,
+        draft_id=draft_id,
+    )
+
+
+async def _insert_checkin(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    idempotency_key: uuid.UUID,
+    content_hash: str,
+    fields: dict[str, Any],
+    draft_id: uuid.UUID | None,
+) -> Checkin:
+    venue_id = fields["venue_id"]
     if await session.get(Venue, venue_id) is None:
         raise VenueNotFoundError(f"venue not found: {venue_id}")
-
-    _ensure_visited_at_not_future(visited_at, visited_tz)
+    _ensure_visited_at_not_future(fields["visited_at"], fields["visited_tz"])
 
     checkin = Checkin(
         user_id=user_id,
-        venue_id=venue_id,
-        rating_taste=rating_taste,
-        rating_service=rating_service,
-        rating_ambiance=rating_ambiance,
-        rating_value=rating_value,
-        note=note,
-        photo_url=photo_url,
-        visibility=visibility,
-        visited_at=visited_at,
-        visited_tz=visited_tz,
+        idempotency_key=idempotency_key,
+        idempotency_payload_hash=content_hash,
+        **fields,
     )
     session.add(checkin)
+    if draft_id is not None:
+        await discard_submitted_draft(session, user_id=user_id, draft_id=draft_id)
     await session.commit()
     await session.refresh(checkin)
 
     # Only a public check-in can ever count toward venue verification
     # (see app.services.venue._count_distinct_public_checkin_users),
     # skip the extra query entirely for anything else, per ADR-0009.
-    if visibility == Visibility.PUBLIC:
+    if fields["visibility"] == Visibility.PUBLIC:
         await evaluate_venue_verification(session, venue_id)
 
     return checkin
@@ -130,85 +178,6 @@ async def get_checkin(
     if not allowed:
         raise CheckinNotFoundError(f"checkin not found: {checkin_id}")
     return checkin
-
-
-async def list_checkins_for_venue(
-    session: AsyncSession,
-    venue_id: uuid.UUID,
-    *,
-    viewer: User | None,
-    limit: int,
-    offset: int,
-) -> list[Checkin]:
-    """List a venue's check-ins, newest first, filtered to what `viewer`
-    is allowed to see (see app.core.authz.can_view) — an admin sees
-    everything.
-    """
-    conditions = [
-        Checkin.venue_id == venue_id,
-        Checkin.deleted_at.is_(None),
-        account_is_visible(Checkin.user_id),
-    ]
-    if viewer is None:
-        conditions.append(Checkin.visibility == Visibility.PUBLIC)
-    elif viewer.role != UserRole.ADMIN:
-        conditions.append(
-            or_(
-                Checkin.visibility == Visibility.PUBLIC,
-                Checkin.user_id == viewer.id,
-                and_(
-                    Checkin.visibility == Visibility.CLOSE_FRIENDS,
-                    close_friend_of_owner_exists(Checkin.user_id, viewer.id),
-                ),
-            )
-        )
-    result = await session.execute(
-        select(Checkin)
-        .where(*conditions)
-        .order_by(Checkin.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    return list(result.scalars().all())
-
-
-async def list_checkins_for_user(
-    session: AsyncSession,
-    target_user_id: uuid.UUID,
-    *,
-    viewer: User | None,
-    limit: int,
-    offset: int,
-) -> list[Checkin]:
-    """List a user's check-ins, newest first, filtered to what `viewer`
-    is allowed to see (see app.core.authz.can_view) — an admin sees
-    everything.
-    """
-    conditions = [
-        Checkin.user_id == target_user_id,
-        Checkin.deleted_at.is_(None),
-        account_is_visible(Checkin.user_id),
-    ]
-    if viewer is None:
-        conditions.append(Checkin.visibility == Visibility.PUBLIC)
-    elif not is_owner_or_admin(target_user_id, viewer):
-        conditions.append(
-            or_(
-                Checkin.visibility == Visibility.PUBLIC,
-                and_(
-                    Checkin.visibility == Visibility.CLOSE_FRIENDS,
-                    close_friend_of_owner_exists(Checkin.user_id, viewer.id),
-                ),
-            )
-        )
-    result = await session.execute(
-        select(Checkin)
-        .where(*conditions)
-        .order_by(Checkin.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    return list(result.scalars().all())
 
 
 async def update_checkin(

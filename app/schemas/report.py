@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.content_report import ContentReportReasonValue
 from app.models.venue_report import VenueReportReasonValue
 
-# Matches app.schemas.checkin's _MAX_NOTE_LENGTH / app.schemas.list's
+# Matches app.schemas.checkin's MAX_NOTE_LENGTH / app.schemas.list's
 # _MAX_DESCRIPTION_LENGTH: the same free-text ceiling this codebase
 # already converged on for a user-authored paragraph, not a fresh
 # number for this one field.
