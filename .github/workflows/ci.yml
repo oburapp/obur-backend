@@ -135,13 +135,12 @@ jobs:
       - name: Test
         run: uv run pytest --cov --cov-report=term-missing
 
-      # obur_test is at head now (the step above migrated it). A model that
-      # has drifted from its migrations makes autogenerate propose wrong
-      # operations, which once went unnoticed for months because nothing
-      # ran this check.
+      # The step above migrated the job's DATABASE_URL to head (in CI,
+      # tests/conftest.py's setdefault keeps that value rather than deriving
+      # a _test database). A model that has drifted from its migrations
+      # makes autogenerate propose wrong operations, which once went
+      # unnoticed for months because nothing ran this check.
       - name: Check models match migrations
-        env:
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/obur_test
         run: uv run alembic check
 
   docker-build:
