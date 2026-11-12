@@ -118,16 +118,18 @@ jobs:
 
       # Mirrors docker/postgres-init/*.sql, which only runs on local
       # docker-compose's first container start. The postgis/postgis image
-      # auto-installs PostGIS (plus tiger_geocoder/topology, dropped below)
-      # on the primary POSTGRES_DB already; obur_test is a second database
+      # auto-installs PostGIS (plus tiger_geocoder/topology, dropped below on
+      # both databases, as locally) on the primary POSTGRES_DB; obur_test is a second database
       # tests/conftest.py derives by suffixing DATABASE_URL, so it needs
       # the same extension setup done explicitly here.
-      - name: Create test database
+      - name: Prepare databases
         run: |
           PGPASSWORD=password psql -h localhost -U user -d obur -c "CREATE DATABASE obur_test"
           PGPASSWORD=password psql -h localhost -U user -d obur_test -c "CREATE EXTENSION IF NOT EXISTS postgis"
           PGPASSWORD=password psql -h localhost -U user -d obur_test -c "DROP EXTENSION IF EXISTS postgis_tiger_geocoder CASCADE"
           PGPASSWORD=password psql -h localhost -U user -d obur_test -c "DROP EXTENSION IF EXISTS postgis_topology CASCADE"
+          PGPASSWORD=password psql -h localhost -U user -d obur -c "DROP EXTENSION IF EXISTS postgis_tiger_geocoder CASCADE"
+          PGPASSWORD=password psql -h localhost -U user -d obur -c "DROP EXTENSION IF EXISTS postgis_topology CASCADE"
 
       # Applies migrations to obur_test itself (tests/integration/conftest.py's
       # autouse fixture), including the RLS/role-creation chain, before any
