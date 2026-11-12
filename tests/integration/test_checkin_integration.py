@@ -3,8 +3,9 @@ database — ownership/admin authorization, privacy filtering, and the
 soft/hard delete distinction all depend on real DB state.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
@@ -123,7 +124,7 @@ async def test_create_checkin_raises_on_future_visit_date(
             rating_service=3,
             rating_ambiance=3,
             rating_value=2,
-            visited_at=date.today() + timedelta(days=1),
+            visited_at=datetime.now(ZoneInfo(_TZ)).date() + timedelta(days=1),
             visited_tz=_TZ,
         )
 
