@@ -512,6 +512,12 @@ until this phase lands. Accepted because `can_view` and
 `ensure_visible_and_owned` are centralised and consistently used today, and
 because the alternative is building the mechanism twice.
 
+**Deviation, recorded 2026-11:** the Railway trial expired after Phase 10
+and the Hobby plan is deliberately not purchased until a live environment
+is needed (Phase 18 at the latest). Continuous deployment pauses until
+then; the redeploy checklist that closes the gap lives in
+[docs/deployment.md](deployment.md#suspension-and-redeploy).
+
 ## Phase 9 — Venue Discovery Enrichment
 
 Implements [ADR-0009](https://github.com/oburapp/obur-docs/blob/main/adr/0009-venue-discovery-enrichment.md)

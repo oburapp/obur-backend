@@ -1,10 +1,15 @@
 # Deployment
 
-> **Status: live.** The Railway project described below is deployed and
-> running (`obur-backend`, `postgis`, `Redis`, EU West). Most of this
-> document is now a verified account of the real system, not a plan.
-> The two items still open are named in
-> [Still open](#still-open) below, not silently assumed done.
+> **Status: suspended (since 2026-11).** The Railway project described
+> below was deployed, verified, and running (`obur-backend`, `postgis`,
+> `Redis`, EU West) through Phase 10. The trial then expired, and the
+> Hobby plan is deliberately not purchased yet: there are no users and
+> no real data, and every phase through 17 is built and tested against
+> local infrastructure. The rest of this document still describes the
+> real, verified setup, not a plan. See
+> [Suspension and redeploy](#suspension-and-redeploy) for what this
+> costs and what bringing it back requires. The items still open are
+> named in [Still open](#still-open) below, not silently assumed done.
 
 Platform: [Railway](https://railway.com). Backend service, PostgreSQL,
 and Redis, all in the same region, per `docs/roadmap.md` Phase 8.
@@ -141,6 +146,42 @@ When a CI/CD pipeline exists for this repo (none does yet, no
 automated step in it (list domains/proxies for the database services,
 fail the pipeline if either is non-empty) rather than staying a thing
 someone has to remember to re-check by hand.
+
+## Suspension and redeploy
+
+The Railway trial expired in 2026-11, after Phase 10. The Hobby plan
+($5/month) is not purchased until a live environment is actually
+needed: at the latest Phase 18, earlier only if a phase needs a real
+check against Railway itself (Phase 14's Cron Job, for example).
+
+**The cost, stated plainly:** Phase 8 moved deployment early so every
+later phase would deploy continuously instead of saving up one risky
+cutover at the end. While suspended, migrations from Phase 11 onward
+never run against a real instance until redeploy. Accepted because the
+Railway-specific risks (role split, RLS on managed Postgres, Pre-deploy
+migrations) were already verified for real in Phase 8.
+
+**Side effects while suspended:**
+
+- The Clerk webhook's registered URL does not respond. Clerk retries
+  and gives up, which is harmless. Local webhook testing goes through a
+  temporary tunnel instead.
+- Scheduled backups (ADR-0017) do not run. There is no real data to
+  protect.
+- GitHub's Deployments panel shows `production` as `inactive`. CI
+  (GitHub Actions) is unaffected.
+
+**Redeploy checklist** (all mandatory, not optional polish):
+
+1. Buy the Hobby plan; recreate any service Railway removed after the
+   trial (`obur-backend`, `postgis`, `Redis`, EU West).
+2. Deploy and confirm the Pre-deploy Command applies every migration
+   from scratch against a clean database.
+3. Confirm `/health` reports PostgreSQL and Redis as healthy.
+4. Confirm the Clerk webhook still delivers to the deployed URL.
+5. Measure `TRUSTED_PROXY_COUNT` (see [Still open](#still-open)).
+6. Confirm the backup Cron Job runs and lands in R2.
+7. Change this document's status back to live.
 
 ## Still open
 
