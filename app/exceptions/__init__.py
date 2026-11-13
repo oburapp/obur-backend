@@ -39,6 +39,13 @@ from app.exceptions.social_exceptions import (
     SelfMuteError,
     SocialError,
 )
+from app.exceptions.tagging_exceptions import (
+    HashtagTooLongError,
+    MentionNotAllowedError,
+    TaggingError,
+    TooManyHashtagsError,
+    TooManyMentionsError,
+)
 from app.exceptions.user_exceptions import (
     AccountNotFrozenError,
     UserError,
@@ -70,6 +77,7 @@ __all__ = [
     "DuplicateVenueNearbyError",
     "FollowNotFoundError",
     "FutureVisitDateError",
+    "HashtagTooLongError",
     "IdempotencyKeyInvalidError",
     "IdempotencyKeyMissingError",
     "IdempotencyKeyReusedError",
@@ -80,6 +88,7 @@ __all__ = [
     "ListError",
     "ListItemNotFoundError",
     "ListNotFoundError",
+    "MentionNotAllowedError",
     "MuteNotFoundError",
     "NotAFollowerError",
     "NotCheckinOwnerError",
@@ -90,6 +99,9 @@ __all__ = [
     "SelfFollowError",
     "SelfMuteError",
     "SocialError",
+    "TaggingError",
+    "TooManyHashtagsError",
+    "TooManyMentionsError",
     "UserError",
     "UserNotFoundError",
     "UsernameChangedTooRecentlyError",

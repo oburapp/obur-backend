@@ -69,6 +69,19 @@ class CheckinUpdateRequest(BaseModel):
     visited_at: date | None = None
 
 
+class MentionResponse(BaseModel):
+    """One `@[<user_id>]` token in a note. `username` is the person's
+    current one, or None once the mention is no longer active (a block, a
+    visibility change, a hidden account); clients then show a localised
+    placeholder such as "Obur user" (ADR-0019 in obur-docs).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: UUID
+    username: str | None
+
+
 class CheckinResponse(BaseModel):
     """Public shape of a Checkin."""
 
@@ -87,3 +100,6 @@ class CheckinResponse(BaseModel):
     visited_at: date
     visited_tz: str
     created_at: datetime
+    # Every token in `note`, in order. Filled by
+    # app.api.v1.checkin_presenter, never by `model_validate` alone.
+    mentions: list[MentionResponse] = Field(default_factory=list)

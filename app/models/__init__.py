@@ -6,6 +6,7 @@ from app.models.checkin import Checkin
 from app.models.checkin_bookmark import CheckinBookmark
 from app.models.checkin_draft import CheckinDraft
 from app.models.checkin_like import CheckinLike
+from app.models.checkin_mention import CheckinMention
 from app.models.close_friend import CloseFriend
 from app.models.content_report import (
     ContentReport,
@@ -13,6 +14,7 @@ from app.models.content_report import (
     ContentReportTargetType,
 )
 from app.models.follow import Follow
+from app.models.hashtag import CheckinHashtag, Hashtag, ListHashtag
 from app.models.list import List
 from app.models.list_bookmark import ListBookmark
 from app.models.list_item import ListItem
@@ -35,14 +37,18 @@ __all__ = [
     "Checkin",
     "CheckinBookmark",
     "CheckinDraft",
+    "CheckinHashtag",
     "CheckinLike",
+    "CheckinMention",
     "CloseFriend",
     "ContentReport",
     "ContentReportReason",
     "ContentReportTargetType",
     "Follow",
+    "Hashtag",
     "List",
     "ListBookmark",
+    "ListHashtag",
     "ListItem",
     "ListLike",
     "Mute",

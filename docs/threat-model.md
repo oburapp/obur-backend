@@ -47,7 +47,7 @@ single most common real-world API vulnerability class.
   Existence-leak protection is built in: a resource a caller can't see
   returns the same 404 a nonexistent id would, never a 403 that would
   confirm the id belongs to something real.
-- **Database layer** - Row Level Security on all 20 application tables
+- **Database layer** - Row Level Security on all 24 application tables
   (ADR-0016, Phase 8), the layer that survives a query forgetting to
   call the application check. Verified with fail-closed and
   application/RLS-parity integration tests

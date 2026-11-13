@@ -604,6 +604,10 @@ has to exist before client work starts.
 - Hashtag discovery over `public` content; `NotificationType` gains
   `mention`.
 
+Writing format, normalisation, eligibility, and every way a mention stops
+being valid are decided in
+[ADR-0019](https://github.com/oburapp/obur-docs/blob/main/adr/0019-mentions-and-hashtags.md).
+
 **Why now:** the mutual-follow requirement and the block-time purge both
 depend on Phase 10.
 

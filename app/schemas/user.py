@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.i18n import SUPPORTED_LOCALES
 
 _MAX_DISPLAY_NAME_LENGTH = 50
-_MAX_USERNAME_LENGTH = 30
+MAX_USERNAME_LENGTH = 30
 _MAX_BIO_LENGTH = 300
 _MAX_CITY_LENGTH = 100
 # Letters, digits, underscore and dot — the character set handles across
@@ -34,7 +34,7 @@ class UserUpdateRequest(BaseModel):
     username: str | None = Field(
         default=None,
         min_length=3,
-        max_length=_MAX_USERNAME_LENGTH,
+        max_length=MAX_USERNAME_LENGTH,
         pattern=_USERNAME_PATTERN,
     )
     bio: str | None = Field(default=None, max_length=_MAX_BIO_LENGTH)

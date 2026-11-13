@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.checkin_presenter import checkin_responses
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.locale import resolve_locale
@@ -114,4 +115,4 @@ async def list_venue_checkins(
     checkins = await checkin_listing_service.list_checkins_for_venue(
         session, venue_id, viewer=viewer, limit=limit, offset=offset
     )
-    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
+    return await checkin_responses(session, checkins)

@@ -163,6 +163,31 @@ IDEMPOTENCY_REQUEST_IN_PROGRESS = Problem(
 )
 
 # --- Rejected input --------------------------------------------------------
+# Mentions and hashtags, ADR-0019 in obur-docs.
+TOO_MANY_MENTIONS = Problem(
+    "too-many-mentions",
+    "Too many mentions",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "A check-in can mention at most 10 people.",
+)
+MENTION_NOT_ALLOWED = Problem(
+    "mention-not-allowed",
+    "That person can't be mentioned here",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "Only mutual followers who can see this check-in can be mentioned.",
+)
+TOO_MANY_HASHTAGS = Problem(
+    "too-many-hashtags",
+    "Too many hashtags",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "A check-in or list can carry at most 5 hashtags.",
+)
+HASHTAG_TOO_LONG = Problem(
+    "hashtag-too-long",
+    "Hashtag too long",
+    status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "A hashtag can be at most 50 characters.",
+)
 IDEMPOTENCY_KEY_MISSING = Problem(
     "idempotency-key-missing",
     "Idempotency-Key header is required",
