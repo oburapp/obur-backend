@@ -199,6 +199,13 @@ except:
     not a general license for raw SQL elsewhere. See
     [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md)
     in obur-docs.
+  - **An integrity trigger is also written via `op.execute()`**, only
+    where a guarantee must hold on a path application code never sees,
+    such as a foreign-key cascade. The one so far:
+    `trg_close_friends_purge_mentions`, which removes mentions a person
+    can no longer see when they leave a close friends list
+    ([ADR-0019](https://github.com/oburapp/obur-docs/blob/main/adr/0019-mentions-and-hashtags.md)).
+    Business logic otherwise stays in `app/services/`.
 
 ---
 
@@ -415,7 +422,7 @@ async def test_checkin(): ...
 - `TODO` comments
 - Hardcoded URLs, ports, or credentials
 - `assert` for runtime validation in production code
-- Raw SQL outside of PostGIS-specific queries and RLS policy DDL in migrations (and even then, use SQLAlchemy `text()` with bound parameters, or `op.execute()` for policy DDL, see [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md))
+- Raw SQL outside of PostGIS-specific queries, RLS policy DDL, and integrity triggers in migrations (and even then, use SQLAlchemy `text()` with bound parameters, or `op.execute()` for policy DDL, see [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md))
 - Committing `.env` or any file containing secrets
 - Returning ORM objects directly from endpoints
 - Unbounded DB queries without pagination

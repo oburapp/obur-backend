@@ -257,7 +257,12 @@ async def test_update_checkin_raises_on_future_visit_date() -> None:
         )
 
 
-async def test_update_checkin_applies_editable_fields_for_the_owner() -> None:
+async def test_update_checkin_applies_editable_fields_for_the_owner(
+    mocker: MockerFixture,
+) -> None:
+    # Mention/hashtag handling of a note edit is covered against the real
+    # database in tests/integration/test_mention_integration.py.
+    mocker.patch("app.services.checkin.plan_edit_tagging", AsyncMock(return_value=None))
     owner = _user()
     checkin = _checkin(user_id=owner.id)
     session = AsyncMock()

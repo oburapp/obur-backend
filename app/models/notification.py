@@ -30,6 +30,7 @@ class NotificationType:
     NEW_FOLLOWER = "new_follower"
     CHECKIN_LIKE = "checkin_like"
     LIST_LIKE = "list_like"
+    MENTION = "mention"
 
 
 class NotificationTargetType:

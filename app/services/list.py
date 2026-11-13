@@ -21,10 +21,12 @@ from app.core.authz import (
     ensure_visible_and_owned,
     is_owner_or_admin,
 )
+from app.core.text_tokens import parse_hashtags
 from app.core.visibility import Visibility
 from app.exceptions import ListNotFoundError, NotListOwnerError
 from app.models.list import List
 from app.models.user import User
+from app.services.hashtag import sync_list_hashtags
 
 # Fields a list's owner (or an admin) may change after creation.
 _EDITABLE_FIELDS = frozenset({"title", "description", "visibility"})
@@ -38,11 +40,17 @@ async def create_list(
     description: str | None = None,
     visibility: str = Visibility.PUBLIC,
 ) -> List:
-    """Create an empty list."""
+    """Create an empty list. Hashtags in `description` are linked
+    (ADR-0019); raises `TooManyHashtagsError` / `HashtagTooLongError` per
+    app.core.text_tokens.
+    """
+    tags = parse_hashtags(description)
     venue_list = List(
         user_id=user_id, title=title, description=description, visibility=visibility
     )
     session.add(venue_list)
+    await session.flush()
+    await sync_list_hashtags(session, list_id=venue_list.id, tags=tags)
     await session.commit()
     await session.refresh(venue_list)
     return venue_list
@@ -132,8 +140,13 @@ async def update_list(
         not_owner_message=f"user {current_user.id} may not modify list {list_id}",
     )
 
+    # A new description relinks its hashtags (ADR-0019).
+    description = updates.get("description")
+    tags = parse_hashtags(description) if "description" in updates else None  # type: ignore[arg-type]
     for field in _EDITABLE_FIELDS & updates.keys():
         setattr(venue_list, field, updates[field])
+    if tags is not None:
+        await sync_list_hashtags(session, list_id=venue_list.id, tags=tags)
 
     await session.commit()
     await session.refresh(venue_list)

@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.checkin_presenter import checkin_responses
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.pagination import DEFAULT_LIMIT, MAX_LIMIT
@@ -92,7 +93,7 @@ async def list_user_checkins(
     checkins = await checkin_listing_service.list_checkins_for_user(
         session, user_id, viewer=viewer, limit=limit, offset=offset
     )
-    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
+    return await checkin_responses(session, checkins)
 
 
 @router.get("/{user_id}/lists")
@@ -144,7 +145,7 @@ async def list_my_bookmarked_checkins(
     checkins = await bookmark_service.list_bookmarked_checkins(
         session, current_user.id, limit=limit, offset=offset
     )
-    return [CheckinResponse.model_validate(checkin) for checkin in checkins]
+    return await checkin_responses(session, checkins)
 
 
 @router.get("/me/bookmarks/lists")

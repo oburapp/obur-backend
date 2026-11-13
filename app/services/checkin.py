@@ -13,6 +13,7 @@ from app.core.authz import (
     can_view,
     ensure_visible_and_owned,
 )
+from app.core.text_tokens import parse_hashtags
 from app.core.visibility import Visibility
 from app.exceptions import (
     CheckinNotFoundError,
@@ -29,6 +30,8 @@ from app.services.checkin_idempotency import (
     find_previous_submission,
     payload_hash,
 )
+from app.services.checkin_tagging import plan_edit_tagging, write_tagging
+from app.services.mention import plan_mentions
 from app.services.venue import evaluate_venue_verification
 
 # Fields a check-in's owner (or an admin) may change after creation —
@@ -137,6 +140,13 @@ async def _insert_checkin(
     if await session.get(Venue, venue_id) is None:
         raise VenueNotFoundError(f"venue not found: {venue_id}")
     _ensure_visited_at_not_future(fields["visited_at"], fields["visited_tz"])
+    tags = parse_hashtags(fields["note"])
+    plan = await plan_mentions(
+        session,
+        author_id=user_id,
+        visibility=fields["visibility"],
+        new_note=fields["note"],
+    )
 
     checkin = Checkin(
         user_id=user_id,
@@ -145,6 +155,8 @@ async def _insert_checkin(
         **fields,
     )
     session.add(checkin)
+    await session.flush()
+    await write_tagging(session, checkin, plan=plan, tags=tags)
     if draft_id is not None:
         await discard_submitted_draft(session, user_id=user_id, draft_id=draft_id)
     await session.commit()
@@ -211,9 +223,12 @@ async def update_checkin(
 
     if "visited_at" in updates:
         _ensure_visited_at_not_future(updates["visited_at"], checkin.visited_tz)  # type: ignore[arg-type]
+    tagging = await plan_edit_tagging(session, checkin, updates)
 
     for field in _EDITABLE_FIELDS & updates.keys():
         setattr(checkin, field, updates[field])
+    if tagging is not None:
+        await write_tagging(session, checkin, plan=tagging[0], tags=tagging[1])
 
     await session.commit()
     await session.refresh(checkin)

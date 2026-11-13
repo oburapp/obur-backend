@@ -13,7 +13,7 @@ same one-line check is reused as-is once other user-owned resources
 import uuid
 
 from fastapi import Depends
-from sqlalchemy import ColumnElement, select, text
+from sqlalchemy import ColumnElement, and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
@@ -21,6 +21,7 @@ from app.core import problems
 from app.core.auth import get_current_user
 from app.core.problems import ProblemError
 from app.core.visibility import Visibility
+from app.models.block import Block
 from app.models.close_friend import CloseFriend
 from app.models.user import User, UserRole, UserStatus
 
@@ -187,5 +188,29 @@ def account_is_visible(
     return (
         select(owner.id)
         .where(owner.id == owner_id_column, owner.status == UserStatus.ACTIVE)
+        .exists()
+    )
+
+
+def not_blocked_with(
+    owner_id_column: InstrumentedAttribute[uuid.UUID], viewer_id: uuid.UUID
+) -> ColumnElement[bool]:
+    """Correlated subquery: neither the row's owner nor `viewer_id` has
+    blocked the other. The application-side twin of the block check RLS
+    already applies, for listings that surface other people's content
+    beyond its owner's own pages (hashtag pages, ADR-0019).
+    """
+    return ~(
+        select(Block.blocker_id)
+        .where(
+            or_(
+                and_(
+                    Block.blocker_id == owner_id_column, Block.blocked_id == viewer_id
+                ),
+                and_(
+                    Block.blocker_id == viewer_id, Block.blocked_id == owner_id_column
+                ),
+            )
+        )
         .exists()
     )

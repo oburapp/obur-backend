@@ -19,7 +19,9 @@ from app.api.v1 import (
     checkins,
     close_friends,
     follows,
+    hashtags,
     lists,
+    mentions,
     mutes,
     notifications,
     reports,
@@ -229,6 +231,8 @@ app.include_router(follows.router, prefix=_API_V1_PREFIX)
 app.include_router(close_friends.router, prefix=_API_V1_PREFIX)
 app.include_router(blocks.router, prefix=_API_V1_PREFIX)
 app.include_router(mutes.router, prefix=_API_V1_PREFIX)
+app.include_router(mentions.router, prefix=_API_V1_PREFIX)
+app.include_router(hashtags.router, prefix=_API_V1_PREFIX)
 app.include_router(lists.router, prefix=_API_V1_PREFIX)
 app.include_router(venue_saves.router, prefix=_API_V1_PREFIX)
 app.include_router(notifications.router, prefix=_API_V1_PREFIX)

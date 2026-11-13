@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mentions and hashtags, per ADR-0019, Instagram-style and written inline.
+  A mention is stored in the note as an `@[<user_id>]` token and returned
+  with the person's current username, so renames follow it; only mutual
+  followers who can see the check-in can be newly mentioned (max 10), and
+  a mention that stops being valid (block, visibility change, leaving
+  close friends) is removed while its text stays and resolves to no
+  username. Leaving close friends is enforced by a database trigger,
+  since two of its three paths are foreign-key cascades. Hashtags match
+  case-insensitively (NFC, Unicode case folding, `İ` → `i`), display as
+  typed, max 5 per check-in or list and 50 characters each
+- `GET /api/v1/users/me/mentionable` for the `@` dropdown, and
+  `GET /api/v1/hashtags/{tag}/checkins` / `/lists` for hashtag pages:
+  public content only, blocked users hidden, muted users shown
+- `CheckinResponse.mentions`, resolved for a whole page in one query
+
 - Check-in drafts (`/api/v1/checkin-drafts`), per ADR-0018: server-synced
   so a check-in started on one device can be finished on another. Any
   number per user, each expiring 7 days after its last edit; expiry is

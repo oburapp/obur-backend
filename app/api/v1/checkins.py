@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.checkin_presenter import checkin_response
 from app.core.auth import get_current_user, get_optional_current_user
 from app.core.database import get_session
 from app.core.idempotency import get_idempotency_key
@@ -58,7 +59,7 @@ async def create_checkin(
         visibility=payload.visibility,
     )
 
-    return CheckinResponse.model_validate(checkin)
+    return await checkin_response(session, checkin)
 
 
 @router.get("/{checkin_id}")
@@ -73,7 +74,7 @@ async def get_checkin(
     """
     checkin = await checkin_service.get_checkin(session, checkin_id, viewer=viewer)
 
-    return CheckinResponse.model_validate(checkin)
+    return await checkin_response(session, checkin)
 
 
 @router.patch("/{checkin_id}")
@@ -93,7 +94,7 @@ async def update_checkin(
         updates=payload.model_dump(exclude_unset=True),
     )
 
-    return CheckinResponse.model_validate(checkin)
+    return await checkin_response(session, checkin)
 
 
 @router.delete("/{checkin_id}", status_code=status.HTTP_204_NO_CONTENT)
