@@ -13,11 +13,13 @@ from app.models.user import User
 from app.models.venue_save import VenueSaveTypeValue
 from app.schemas.checkin import CheckinResponse
 from app.schemas.list import ListResponse
+from app.schemas.most_visited import MostVisitedVenue
 from app.schemas.user import UserResponse, UserUpdateRequest
 from app.schemas.venue_save import VenueSaveResponse
 from app.services import bookmark as bookmark_service
 from app.services import checkin_listing as checkin_listing_service
 from app.services import list as list_service
+from app.services import most_visited as most_visited_service
 from app.services import user as user_service
 from app.services import venue_save as venue_save_service
 
@@ -162,3 +164,16 @@ async def list_my_bookmarked_lists(
         session, current_user.id, limit=limit, offset=offset
     )
     return [ListResponse.model_validate(venue_list) for venue_list in lists]
+
+
+@router.get("/{user_id}/most-visited")
+async def list_most_visited(
+    user_id: UUID,
+    viewer: User | None = Depends(get_optional_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[MostVisitedVenue]:
+    """A user's five most-visited venues (ADR-0020). Empty unless the
+    list's visibility lets the viewer see it; counts include only
+    check-ins the viewer could see, except for the owner themselves.
+    """
+    return await most_visited_service.list_most_visited(session, user_id, viewer=viewer)

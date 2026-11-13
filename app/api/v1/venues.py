@@ -17,6 +17,7 @@ from app.schemas.venue import VenueCreateRequest, VenueResponse
 from app.services import checkin_listing as checkin_listing_service
 from app.services import venue as venue_service
 from app.services import venue_category as venue_category_service
+from app.services import venue_score as venue_score_service
 
 router = APIRouter(prefix="/venues", tags=["venues"])
 
@@ -94,11 +95,12 @@ async def get_venue(
     locale: str = Depends(resolve_locale),
     session: AsyncSession = Depends(get_session),
 ) -> VenueResponse:
-    """Return a single venue by id."""
+    """Return a single venue by id, with its score (ADR-0020)."""
     venue = await venue_service.get_venue(session, venue_id)
 
-    responses = await _with_category_names(session, [venue], locale=locale)
-    return responses[0]
+    (response,) = await _with_category_names(session, [venue], locale=locale)
+    score = await venue_score_service.get_venue_score(session, venue)
+    return response.model_copy(update={"score": score})
 
 
 @router.get("/{venue_id}/checkins")

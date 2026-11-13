@@ -42,7 +42,16 @@ USERNAME_CHANGE_INTERVAL_DAYS = 30
 # `role` and `status` are absent on purpose — neither is ever settable
 # through a user-facing endpoint (PDD §7, §11).
 _EDITABLE_FIELDS = frozenset(
-    {"display_name", "bio", "avatar_url", "city", "country_code", "locale", "timezone"}
+    {
+        "display_name",
+        "bio",
+        "avatar_url",
+        "city",
+        "country_code",
+        "locale",
+        "timezone",
+        "most_visited_visibility",
+    }
 )
 
 

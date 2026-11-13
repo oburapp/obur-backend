@@ -1,0 +1,196 @@
+"""add venue score version and most visited visibility
+
+ADR-0020 in obur-docs.
+
+`venues.score_version` versions the Redis key a venue's score is cached
+under (`venue:{id}:score:v{n}`). Database triggers increment it on every
+write that can move the score, so no application path, including the
+account-deletion cascade and bulk statements that skip the ORM, can leave
+a stale score behind. This is the cache-version trigger exception
+`CLAUDE.md` names under Caching:
+
+- `trg_checkins_bump_score_version` fires after a check-in is inserted or
+  deleted, or updated in a column the score reads (the four ratings,
+  `visibility`, `deleted_at`, `venue_id`). Moving a check-in to another
+  venue bumps both venues.
+- `trg_users_bump_score_version` fires when a user's `status` changes
+  (a suspended account's check-ins stop counting) and bumps every venue
+  that user checked into.
+
+Both trigger functions are `SECURITY DEFINER`: `venues` is admin-only for
+UPDATE under RLS, and the writer is an ordinary user.
+
+`rls_venue_score_sample` returns one venue's score sample (count, mean,
+and sample standard deviation per check-in, overall and per criterion),
+never rows. `SECURITY DEFINER`, a narrow platform-wide-count bypass like
+`rls_verify_venue_if_eligible`: the score is an anonymous statistic, so
+it must not vary with the caller's RLS view, for example hiding public
+check-ins of someone the caller blocked, and then be cached for everyone.
+It counts `public`, non-deleted check-ins of accounts that aren't
+suspended; frozen accounts still count.
+
+`users.most_visited_visibility` is the profile's most-visited list
+visibility, private by default.
+
+Revision ID: 95e8310a10b0
+Revises: c33dcad29d14
+Create Date: 2026-11-13 16:07:34.558904
+
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+_APP_ROLE_NAME = "obur_app"
+_ALLOWED_VISIBILITIES = ("public", "close_friends", "private")
+
+_CREATE_BUMP_FROM_CHECKINS_SQL = """
+CREATE FUNCTION rls_bump_score_version_from_checkins()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        UPDATE venues SET score_version = score_version + 1
+        WHERE id = OLD.venue_id;
+    END IF;
+    IF TG_OP = 'INSERT'
+       OR (TG_OP = 'UPDATE' AND NEW.venue_id IS DISTINCT FROM OLD.venue_id) THEN
+        UPDATE venues SET score_version = score_version + 1
+        WHERE id = NEW.venue_id;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+"""
+
+_CREATE_CHECKINS_TRIGGER_SQL = """
+CREATE TRIGGER trg_checkins_bump_score_version
+AFTER INSERT OR DELETE OR UPDATE OF
+    rating_taste, rating_service, rating_ambiance, rating_value,
+    visibility, deleted_at, venue_id
+ON checkins
+FOR EACH ROW EXECUTE FUNCTION rls_bump_score_version_from_checkins()
+"""
+
+_CREATE_BUMP_FROM_USERS_SQL = """
+CREATE FUNCTION rls_bump_score_version_from_users()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    UPDATE venues SET score_version = score_version + 1
+    WHERE id IN (SELECT DISTINCT venue_id FROM checkins WHERE user_id = NEW.id);
+    RETURN NULL;
+END;
+$$;
+"""
+
+_CREATE_USERS_TRIGGER_SQL = """
+CREATE TRIGGER trg_users_bump_score_version
+AFTER UPDATE OF status ON users
+FOR EACH ROW
+WHEN (OLD.status IS DISTINCT FROM NEW.status)
+EXECUTE FUNCTION rls_bump_score_version_from_users()
+"""
+
+_CREATE_SCORE_SAMPLE_SQL = """
+CREATE FUNCTION rls_venue_score_sample(p_venue_id uuid)
+RETURNS TABLE (
+    checkin_count bigint,
+    overall_mean double precision,
+    overall_sd double precision,
+    taste_mean double precision,
+    taste_sd double precision,
+    service_mean double precision,
+    service_sd double precision,
+    ambiance_mean double precision,
+    ambiance_sd double precision,
+    value_mean double precision,
+    value_sd double precision
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT
+        count(*),
+        avg(per_visit), stddev_samp(per_visit),
+        avg(c.rating_taste), stddev_samp(c.rating_taste),
+        avg(c.rating_service), stddev_samp(c.rating_service),
+        avg(c.rating_ambiance), stddev_samp(c.rating_ambiance),
+        avg(c.rating_value), stddev_samp(c.rating_value)
+    FROM checkins c
+    JOIN users u ON u.id = c.user_id
+    CROSS JOIN LATERAL (
+        SELECT (c.rating_taste + c.rating_service
+                + c.rating_ambiance + c.rating_value) / 4.0 AS per_visit
+    ) visit
+    WHERE c.venue_id = p_venue_id
+      AND c.visibility = 'public'
+      AND c.deleted_at IS NULL
+      AND u.status <> 'suspended'
+$$;
+"""
+
+# revision identifiers, used by Alembic.
+revision: str = "95e8310a10b0"
+down_revision: str | Sequence[str] | None = "c33dcad29d14"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    """Upgrade schema."""
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.add_column(
+        "users",
+        sa.Column(
+            "most_visited_visibility",
+            sa.String(),
+            server_default="private",
+            nullable=False,
+        ),
+    )
+    op.add_column(
+        "venues",
+        sa.Column("score_version", sa.Integer(), server_default="0", nullable=False),
+    )
+    # ### end Alembic commands ###
+    allowed = ", ".join(f"'{value}'" for value in _ALLOWED_VISIBILITIES)
+    op.create_check_constraint(
+        "ck_users_most_visited_visibility_allowed",
+        "users",
+        f"most_visited_visibility IN ({allowed})",
+    )
+    op.execute(_CREATE_BUMP_FROM_CHECKINS_SQL)
+    op.execute(_CREATE_CHECKINS_TRIGGER_SQL)
+    op.execute(_CREATE_BUMP_FROM_USERS_SQL)
+    op.execute(_CREATE_USERS_TRIGGER_SQL)
+    op.execute(_CREATE_SCORE_SAMPLE_SQL)
+    op.execute(
+        f"GRANT EXECUTE ON FUNCTION rls_venue_score_sample(uuid) TO {_APP_ROLE_NAME}"
+    )
+
+
+def downgrade() -> None:
+    """Downgrade schema."""
+    op.execute("DROP FUNCTION IF EXISTS rls_venue_score_sample(uuid)")
+    op.execute("DROP TRIGGER IF EXISTS trg_users_bump_score_version ON users")
+    op.execute("DROP FUNCTION IF EXISTS rls_bump_score_version_from_users()")
+    op.execute("DROP TRIGGER IF EXISTS trg_checkins_bump_score_version ON checkins")
+    op.execute("DROP FUNCTION IF EXISTS rls_bump_score_version_from_checkins()")
+    op.drop_constraint(
+        "ck_users_most_visited_visibility_allowed", "users", type_="check"
+    )
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_column("venues", "score_version")
+    op.drop_column("users", "most_visited_visibility")
+    # ### end Alembic commands ###

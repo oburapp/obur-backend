@@ -1,11 +1,13 @@
 """Schemas for user resources."""
 
 from datetime import datetime
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.i18n import SUPPORTED_LOCALES
+from app.core.visibility import VisibilityValue
 
 _MAX_DISPLAY_NAME_LENGTH = 50
 MAX_USERNAME_LENGTH = 30
@@ -43,6 +45,18 @@ class UserUpdateRequest(BaseModel):
     country_code: str | None = Field(default=None, min_length=2, max_length=2)
     locale: str | None = Field(default=None, pattern="|".join(SUPPORTED_LOCALES))
     timezone: str | None = None
+    # Who may see the most-visited places list (ADR-0020). Can be changed,
+    # never cleared: it always has a value.
+    most_visited_visibility: VisibilityValue | None = None
+
+    @model_validator(mode="after")
+    def _most_visited_visibility_never_cleared(self) -> Self:
+        if (
+            "most_visited_visibility" in self.model_fields_set
+            and self.most_visited_visibility is None
+        ):
+            raise ValueError("most_visited_visibility cannot be cleared")
+        return self
 
 
 class UserResponse(BaseModel):
@@ -62,6 +76,7 @@ class UserResponse(BaseModel):
     timezone: str | None
     role: str
     status: str
+    most_visited_visibility: str
     created_at: datetime
 
 

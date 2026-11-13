@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Venue score, per ADR-0020: a headline tier and one per criterion, from
+  public, live check-ins of unsuspended accounts, each check-in one
+  observation (the mean of its four ratings), no tier below 10
+  check-ins, then PDD §8's 95% lower bound and 9-tier table. Returned on
+  `GET /api/v1/venues/{id}` as tier keys and a check-in count, never a
+  number. The sample comes from a narrow SECURITY DEFINER function so
+  the score can't vary with the caller's own RLS view
+- Score caching under `venue:{id}:score:v{n}`, where `venues.score_version`
+  is moved by database triggers on every write that can change the score,
+  account-deletion cascades included; the TTL clears old versions. A
+  Redis outage falls back to computing directly
+- Most-visited places: `GET /api/v1/users/{id}/most-visited`, the five
+  venues a user checked into most, with `most_visited_visibility`
+  (private by default) on `PATCH /api/v1/users/me`; counts include only
+  check-ins the viewer could see, except for the owner
+
 - Mentions and hashtags, per ADR-0019, Instagram-style and written inline.
   A mention is stored in the note as an `@[<user_id>]` token and returned
   with the person's current username, so renames follow it; only mutual

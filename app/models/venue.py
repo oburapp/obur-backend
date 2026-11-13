@@ -28,6 +28,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     func,
@@ -105,6 +106,15 @@ class Venue(Base):
     # once enough independent public check-ins corroborate it (see
     # app/services/venue.py) or, with no google_places_id to anchor it,
     # by an admin. See ADR-0009.
+    # Incremented by database triggers on every write that can move this
+    # venue's score: a check-in inserted, deleted, or updated (ratings,
+    # visibility, deleted_at, venue), and a status change of any user who
+    # checked in here (migration for ADR-0020). Never written by
+    # application code. It versions the Redis cache key, so no code path,
+    # including account-deletion cascades, can leave a stale score behind.
+    score_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     is_verified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )

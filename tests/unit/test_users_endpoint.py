@@ -28,6 +28,7 @@ async def test_get_me_returns_the_authenticated_users_profile(
         timezone=None,
         role="user",
         status="active",
+        most_visited_visibility="private",
         created_at=datetime.now(UTC),
     )
     app.dependency_overrides[get_current_user] = lambda: user

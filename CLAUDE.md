@@ -282,6 +282,16 @@ async def list_checkins(
 - Always set TTL — never cache without expiry
 - Use `hashlib.sha256` for cache keys derived from text — never Python's built-in `hash()` (it is process-salted and non-deterministic across restarts)
 - Invalidate cache on write — never serve stale data silently
+- **A cache entry derived from database data is keyed by a version the
+  database itself maintains**, incremented by a trigger on every write
+  that can change it (e.g. `venues.score_version`, `venue:{id}:score:v{n}`).
+  Application code never deletes such a key by hand: an ORM-level hook
+  misses foreign-key cascades and bulk statements, and an explicit delete
+  is one more call site to forget. The TTL stays, as the backstop that
+  clears superseded versions. This is the only purpose triggers serve
+  beyond the integrity exception under Database; caches not derived from
+  database data (e.g. rate-limit counters) are unaffected. See
+  [ADR-0020](https://github.com/oburapp/obur-docs/blob/main/adr/0020-venue-scoring-and-most-visited.md).
 
 ```python
 # correct
@@ -422,7 +432,7 @@ async def test_checkin(): ...
 - `TODO` comments
 - Hardcoded URLs, ports, or credentials
 - `assert` for runtime validation in production code
-- Raw SQL outside of PostGIS-specific queries, RLS policy DDL, and integrity triggers in migrations (and even then, use SQLAlchemy `text()` with bound parameters, or `op.execute()` for policy DDL, see [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md))
+- Raw SQL outside of PostGIS-specific queries, RLS policy DDL, integrity triggers, and cache-version triggers in migrations (and even then, use SQLAlchemy `text()` with bound parameters, or `op.execute()` for policy DDL, see [ADR-0016](https://github.com/oburapp/obur-docs/blob/main/adr/0016-database-roles-and-row-level-security.md))
 - Committing `.env` or any file containing secrets
 - Returning ORM objects directly from endpoints
 - Unbounded DB queries without pagination
