@@ -11,6 +11,7 @@ from pytest_mock import MockerFixture
 
 from app.core import problems
 from app.core.auth import get_current_user
+from app.core.visibility import Visibility
 from app.exceptions import UsernameChangedTooRecentlyError, UsernameTakenError
 from app.main import app
 from app.models.user import User, UserStatus
@@ -34,6 +35,7 @@ def _user(**overrides: object) -> User:
         "timezone": None,
         "role": "user",
         "status": UserStatus.ACTIVE,
+        "most_visited_visibility": Visibility.PRIVATE,
         "created_at": datetime.now(UTC),
     }
     defaults.update(overrides)

@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.i18n import DEFAULT_LOCALE
+from app.core.visibility import Visibility
 from app.models.base import Base
 
 
@@ -52,6 +53,13 @@ class UserStatus:
 
 _DEFAULT_USER_ROLE = UserRole.USER
 _DEFAULT_USER_STATUS = UserStatus.ACTIVE
+
+_DEFAULT_MOST_VISITED_VISIBILITY = Visibility.PRIVATE
+_ALLOWED_VISIBILITIES = (
+    Visibility.PUBLIC,
+    Visibility.CLOSE_FRIENDS,
+    Visibility.PRIVATE,
+)
 _ALLOWED_USER_STATUSES = (
     UserStatus.ACTIVE,
     UserStatus.FROZEN,
@@ -77,6 +85,12 @@ class User(Base):
             + ", ".join(f"'{value}'" for value in _ALLOWED_USER_STATUSES)
             + ")",
             name="ck_users_status_allowed",
+        ),
+        CheckConstraint(
+            "most_visited_visibility IN ("
+            + ", ".join(f"'{value}'" for value in _ALLOWED_VISIBILITIES)
+            + ")",
+            name="ck_users_most_visited_visibility_allowed",
         ),
     )
 
@@ -117,6 +131,12 @@ class User(Base):
     )
     status: Mapped[str] = mapped_column(
         String, nullable=False, server_default=_DEFAULT_USER_STATUS
+    )
+    # Who may see the profile's most-visited places list (ADR-0020).
+    # Private by default; others' views count only check-ins they could
+    # see themselves (app.services.most_visited).
+    most_visited_visibility: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=_DEFAULT_MOST_VISITED_VISIBILITY
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.venue_score import VenueScore
+
 
 class VenueCreateRequest(BaseModel):
     """Payload to create a venue. `added_by` is never accepted from the
@@ -54,6 +56,9 @@ class VenueResponse(BaseModel):
     city: str | None
     country_code: str | None
     timezone: str | None
+    # Filled on the single-venue endpoint only; listings stay unscored
+    # until Discover (Phase 16) defines how a page of venues is ranked.
+    score: VenueScore | None = None
     # Cosmetic only, never gates discoverability, ranking, or search.
     is_verified: bool
     # The business itself has closed, per an admin acting on a report.

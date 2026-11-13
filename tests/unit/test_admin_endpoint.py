@@ -223,6 +223,7 @@ async def test_suspend_user_returns_200_for_admin(
         display_name="Hedef",
         role=UserRole.USER,
         status="suspended",
+        most_visited_visibility="private",
         locale="tr",
         created_at=datetime.now(UTC),
     )

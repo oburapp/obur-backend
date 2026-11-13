@@ -618,19 +618,22 @@ first replacing a band table with a statistical one, then collapsing to a
 single level when [ADR-0011](https://github.com/oburapp/obur-docs/blob/main/adr/0011-drop-product-layer-four-venue-criteria.md)
 removed the product layer.
 
-- One score, at venue level, pooling all four criteria from `public`,
-  non-soft-deleted check-ins. No second level; the product-level score left
-  with the product layer.
-- Below a 10-rating floor, no label. Above it, the 95% confidence lower
+Decided in [ADR-0020](https://github.com/oburapp/obur-docs/blob/main/adr/0020-venue-scoring-and-most-visited.md).
+
+- One score, at venue level, from `public`, non-deleted check-ins of
+  accounts that aren't suspended. Each check-in is one observation, the
+  mean of its four ratings.
+- Below a 10-check-in floor, no label. Above it, the 95% confidence lower
   bound placed in PDD §8's 9-tier band table. Only the label is shown.
-- **The four criteria are also exposed individually** on a venue page — a
-  venue with excellent food and poor value is exactly what one averaged
-  number hides. *No ADR yet; write one when this phase starts.*
-- Personalized "best per category" history on a user's own profile. A read
-  query over existing data, and the only thing here with **no volume floor**
-  — it reports the user's own rating, not a platform statistic.
-- Band cut points and the floor are named constants, so PDD §18's
-  calibration item is a value change.
+- The four criteria are exposed individually through the same procedure.
+- Cached in Redis under a version the database maintains
+  (`venues.score_version`, moved by triggers), the rule `CLAUDE.md` now
+  sets for every cache derived from database data.
+- The automatic "best per category" history is replaced by the five
+  most-visited venues, with their own visibility setting and counts that
+  depend on the viewer.
+- Band cut points, the floor, and the cache TTL are named constants, so
+  PDD §18's calibration item is a value change.
 
 **Why now:** depends on Phase 5's four required criteria and Phase 6's
 expanded catalog; Phase 16's Discover ranking consumes the score.
